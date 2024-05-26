@@ -113,6 +113,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 packet.SetID((int)Packet.ID.CUSTOM);
                 SendTCPData(clientID, packet);
             }
+            else
+            {
+                Console.WriteLine("The packet is null!");
+            }
         }
 
         public static void TCP_SentToAll(Packet packet)
