@@ -10,7 +10,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         public const int updatesPerSecond = 30;
         public static void Update()
         {
-            
+            Database.Update();
         }
         #endregion
 

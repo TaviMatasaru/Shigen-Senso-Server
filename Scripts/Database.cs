@@ -60,8 +60,16 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return connection;
         }
 
+        private static DateTime collectTime = DateTime.Now;
 
-
+        public static void Update()
+        {
+            if((DateTime.Now - collectTime).TotalSeconds >= 1)
+            {
+                collectTime = DateTime.Now;
+                CollectResources();
+            }
+        }
 
         public async static void AuthenticatePlayer(int id, string device)
         {
@@ -70,6 +78,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Server.clients[id].account = account_id;
 
             await UpdateHasCastleAsync(device, 0);
+            await UpdatePlayerResourcesAsync(device, 10, 100, 3000, 3000, 3000, 0, 0, 0);
 
             Packet packet = new Packet();
             packet.Write((int)Terminal.RequestsID.AUTH);
@@ -82,43 +91,46 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Task<long> task = Task.Run(() =>
             {
                 long account_id = 0;
-                string select_query = String.Format("SELECT id FROM accounts WHERE device_id = '{0}';", device);
-                bool userFound = false;
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
+                    string select_query = String.Format("SELECT id FROM accounts WHERE device_id = '{0}';", device);
+                    bool userFound = false;
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
-                        if (reader.HasRows)
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
                         {
-                            while (reader.Read())
+                            if (reader.HasRows)
                             {
-                                account_id = long.Parse(reader["id"].ToString());
-                                userFound = true;
+                                while (reader.Read())
+                                {
+                                    account_id = long.Parse(reader["id"].ToString());
+                                    userFound = true;
+                                }
                             }
                         }
                     }
-                }
-                if (!userFound)
-                {
-                    string insert_query = String.Format("INSERT INTO accounts (device_id) VALUES ('{0}');", device);
-                    using (MySqlCommand insert_command = new MySqlCommand(insert_query, mysqlConnection))
+                    if (!userFound)
                     {
-                        insert_command.ExecuteNonQuery();
-                        account_id = insert_command.LastInsertedId;
+                        string insert_query = String.Format("INSERT INTO accounts (device_id) VALUES ('{0}');", device);
+                        using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
+                        {
+                            insert_command.ExecuteNonQuery();
+                            account_id = insert_command.LastInsertedId;
+                        }
                     }
-                }
+                }              
 
                 return account_id;
             });
             return await task;
         }
 
+
         public async static void GetPlayerData(int id, string device)
         {
             long accountID = Server.clients[id].account;
             Data.Player data_player = await GetPlayerDataAsync(id, device);
-            List<Data.Building> buildings = await GetBuildingsAsync(accountID);     
-
+            
             Packet packet = new Packet();
             packet.Write((int)Terminal.RequestsID.SYNC);
             string player = await Data.Serialize<Data.Player>(data_player);
@@ -132,34 +144,39 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Task<Data.Player> task = Task.Run(() =>
             {
                 Data.Player data = new Data.Player();
-                string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle FROM accounts WHERE device_id = '{0}';", device);            
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
-                {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
-                    {
-                        if (reader.HasRows)
-                        {
-                            while (reader.Read())
-                            {
-                                // data.id = long.Parse(reader["id"].ToString());
-                                data.gold = int.Parse(reader["gold"].ToString());
-                                data.gems = int.Parse(reader["gems"].ToString());
-                                data.stone = int.Parse(reader["stone"].ToString());
-                                data.wood = int.Parse(reader["wood"].ToString());
-                                data.food = int.Parse(reader["food"].ToString());
-                                data.stoneProduction = int.Parse(reader["stone_production"].ToString());
-                                data.woodProduction = int.Parse(reader["wood_production"].ToString());
-                                data.foodProduction = int.Parse(reader["food_production"].ToString());
-                                data.hasCastle = bool.Parse(reader["has_castle"].ToString());
 
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle FROM accounts WHERE device_id = '{0}';", device);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    // data.id = long.Parse(reader["id"].ToString());
+                                    data.gold = int.Parse(reader["gold"].ToString());
+                                    data.gems = int.Parse(reader["gems"].ToString());
+                                    data.stone = int.Parse(reader["stone"].ToString());
+                                    data.wood = int.Parse(reader["wood"].ToString());
+                                    data.food = int.Parse(reader["food"].ToString());
+                                    data.stoneProduction = int.Parse(reader["stone_production"].ToString());
+                                    data.woodProduction = int.Parse(reader["wood_production"].ToString());
+                                    data.foodProduction = int.Parse(reader["food_production"].ToString());
+                                    data.hasCastle = bool.Parse(reader["has_castle"].ToString());
+
+                                }
                             }
                         }
                     }
-                }               
+                }                  
                 return data;
             });
             return await task;
         }
+
 
         public async static void BuildCastle(int id, string deviceID, int x_pos, int y_pos)
         {
@@ -219,7 +236,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         if (neighbour.hexType == (int)Terminal.HexType.PLAYER_MOUNTAIN)
                         {
-                            stonePerSecond += 3;
+                            stonePerSecond += serverBuilding.stonePerSecond;
                         }
                     }
                     await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction + stonePerSecond, player.woodProduction, player.foodProduction);
@@ -269,7 +286,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         if (neighbour.hexType == (int)Terminal.HexType.PLAYER_FOREST)
                         {
-                            woodPerSecond += 3;
+                            woodPerSecond += serverBuilding.woodPerSecond;
                         }
                     }
                     await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction + woodPerSecond, player.foodProduction);
@@ -305,8 +322,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             {
                 Data.Player player = await GetPlayerDataAsync(id, deviceID);
                 Data.ServerBuilding serverBuilding = await GetServerBuildingAsync("farm", 1);
-
-                //if(player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
+                
 
                 if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                 {
@@ -319,7 +335,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         if (neighbour.hexType == (int)Terminal.HexType.PLAYER_CROPS)
                         {
-                            foodPerSecond += 3;
+                            foodPerSecond += serverBuilding.foodPerSecond;
                         }
                     }
                     await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction + foodPerSecond);
@@ -339,7 +355,6 @@ namespace DevelopersHub.RealtimeNetworking.Server
             packet.Write(result);
             Sender.TCP_Send(id, packet);
         }
-
 
         public async static void BuildArmyCamp(int id, string deviceID, int x_pos, int y_pos)
         {
@@ -376,6 +391,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         if (canBuild)
                         {
                             await UpdateHexTileTypeAsync(x_pos, y_pos, Terminal.HexType.PLAYER_ARMY_CAMP);
+                            await UpdateArmyCampNeighboursAsync(armyCampTile);
                             await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction);
                             result = 3;
                         }
@@ -395,70 +411,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
             }
 
             Packet packet = new Packet();
-            packet.Write((int)Terminal.RequestsID.BUILD_FARM);
+            packet.Write((int)Terminal.RequestsID.BUILD_ARMY_CAMP);
             packet.Write(result);
             Sender.TCP_Send(id, packet);
         }
-
-
-        private async static Task<Data.Building> GetBuildingAsync(long account_id, string buildingID)
-        {
-            Task<Data.Building> task = Task.Run(() =>
-            {
-                Data.Building data = new Data.Building();
-                data.id = buildingID;
-                string select_query = String.Format("SELECT id, level, x_position, y_position FROM buildings WHERE account_id = {0} AND global_id = '{1}';", account_id,  buildingID);
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
-                {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
-                    {
-                        if (reader.HasRows)
-                        {
-                            while (reader.Read())
-                            {
-                                data.databaseID = long.Parse(reader["id"].ToString());
-                                data.level = int.Parse(reader["level"].ToString());
-                                data.x = int.Parse(reader["x_position"].ToString());
-                                data.y = int.Parse(reader["y_position"].ToString());
-                            }
-                        }
-                    }
-                }
-                return data;
-            });
-            return await task;
-        }
-
-        private async static Task<List<Data.Building>> GetBuildingsAsync(long account_id)
-        {
-            Task<List<Data.Building>> task = Task.Run(() =>
-            {
-                List<Data.Building> data = new List<Data.Building>();
-
-                string select_query = String.Format("SELECT id, global_id, level, x_position, y_position FROM buildings WHERE account_id = '{0}';", account_id);
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
-                {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
-                    {
-                        if (reader.HasRows)
-                        {
-                            while (reader.Read())
-                            {
-                                Data.Building building = new Data.Building();
-                                building.id = reader["global_id"].ToString();
-                                building.databaseID = long.Parse(reader["id"].ToString());
-                                building.level = int.Parse(reader["level"].ToString());
-                                building.x = int.Parse(reader["x_position"].ToString());
-                                building.y = int.Parse(reader["y_position"].ToString());
-                                data.Add(building);
-                            }
-                        }
-                    }
-                }
-                return data;
-            });
-            return await task;
-        }
+       
 
         private async static Task<Data.ServerBuilding> GetServerBuildingAsync(string buildingID, int level)
         {
@@ -466,29 +423,36 @@ namespace DevelopersHub.RealtimeNetworking.Server
             {
                 Data.ServerBuilding data = new Data.ServerBuilding();
 
-                string select_query = String.Format("SELECT id, required_gold, required_wood, required_stone FROM server_buildings WHERE global_id = '{0}' AND level = {1};", buildingID, level);
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
+                    string select_query = String.Format("SELECT id, required_gold, required_wood, required_stone, stone_per_second, wood_per_second, food_per_second FROM server_buildings WHERE global_id = '{0}' AND level = {1};", buildingID, level);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
-                        if (reader.HasRows)
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
                         {
-                            while (reader.Read())
+                            if (reader.HasRows)
                             {
-                                data.id = buildingID;
-                                data.databaseID = long.Parse(reader["id"].ToString());
-                                data.level = level;
-                                data.requiredGold = int.Parse(reader["required_gold"].ToString());
-                                data.requiredWood = int.Parse(reader["required_wood"].ToString());
-                                data.requiredStone = int.Parse(reader["required_stone"].ToString());
+                                while (reader.Read())
+                                {
+                                    data.id = buildingID;
+                                    data.databaseID = long.Parse(reader["id"].ToString());
+                                    data.level = level;
+                                    data.requiredGold = int.Parse(reader["required_gold"].ToString());
+                                    data.requiredWood = int.Parse(reader["required_wood"].ToString());
+                                    data.requiredStone = int.Parse(reader["required_stone"].ToString());
+                                    data.stonePerSecond = int.Parse(reader["stone_per_second"].ToString());
+                                    data.woodPerSecond = int.Parse(reader["wood_per_second"].ToString());
+                                    data.foodPerSecond = int.Parse(reader["food_per_second"].ToString());
+                                }
                             }
                         }
                     }
-                }
+                }                
                 return data;
             });
             return await task;
         }
+
 
         public async static void GenerateNewGrid(int id, string deviceID)
         {
@@ -507,39 +471,89 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             Task<Data.HexGrid> task = Task.Run(() =>
             {
-                string delete_query = String.Format("DELETE FROM hex_grid;");
-                using (MySqlCommand delete_command = new MySqlCommand(delete_query, mysqlConnection))
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    delete_command.ExecuteNonQuery();
-                }
-
-                Data.HexGrid hexGrid = new Data.HexGrid();
-
-                for (int x = 0; x < hexGrid.rows; x++)
-                {
-                    for (int y = 0; y < hexGrid.columns; y++)
+                    string delete_query = String.Format("DELETE FROM hex_grid;");
+                    using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
                     {
-                        int hexTileType = GetRandomHexTile();
+                        delete_command.ExecuteNonQuery();
+                    }
 
-                        Data.HexTile tile = new Data.HexTile();
-                        tile.x = x;
-                        tile.y = y;
-                        tile.hexType = hexTileType;
+                    Data.HexGrid hexGrid = new Data.HexGrid();
 
-                        hexGrid.hexTiles.Add(tile);
-
-                        string insert_query = String.Format("INSERT INTO hex_grid (x, y, hex_type) VALUES ({0}, {1}, {2});", x, y, hexTileType);
-                        using (MySqlCommand insert_command = new MySqlCommand(insert_query, mysqlConnection))
+                    for (int x = 0; x < hexGrid.rows; x++)
+                    {
+                        for (int y = 0; y < hexGrid.columns; y++)
                         {
-                            insert_command.ExecuteNonQuery();                      
+                            int hexTileType = GetRandomHexTile();
+
+                            Data.HexTile tile = new Data.HexTile();
+                            tile.x = x;
+                            tile.y = y;
+                            tile.hexType = hexTileType;
+
+                            hexGrid.hexTiles.Add(tile);
+
+                            string insert_query = String.Format("INSERT INTO hex_grid (x, y, hex_type) VALUES ({0}, {1}, {2});", x, y, hexTileType);
+                            using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
+                            {
+                                insert_command.ExecuteNonQuery();
+                            }
                         }
                     }
-                }
-               
+                    return hexGrid;
+                }                
+            });
+            return await task;
+        }
+
+        public async static void SyncGrid(int id, string device)
+        {
+            long accountID = Server.clients[id].account;            
+            Data.HexGrid grid = await GetGridAsync();
+
+            Packet packet = new Packet();
+            packet.Write((int)Terminal.RequestsID.SYNC_GRID);
+            string hexGrid = await Data.Serialize<Data.HexGrid>(grid);
+            packet.Write(hexGrid);
+
+            Sender.TCP_Send(id, packet);
+        }
+
+        private async static Task<Data.HexGrid> GetGridAsync()
+        {
+            Task<Data.HexGrid> task = Task.Run(() =>
+            {
+                Data.HexGrid hexGrid = new Data.HexGrid();
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT x, y, hex_type FROM hex_grid;");
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    Data.HexTile tile = new Data.HexTile();
+
+                                    tile.x = int.Parse(reader["x"].ToString());
+                                    tile.y = int.Parse(reader["y"].ToString());
+                                    tile.hexType = int.Parse(reader["hex_type"].ToString());
+
+                                    hexGrid.hexTiles.Add(tile);
+                                }
+                            }
+                        }
+                    }
+                }                
                 return hexGrid;
             });
             return await task;
         }
+
 
         private static int GetRandomHexTile()
         {
@@ -582,52 +596,6 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return 0; // Should never happen unless weights are misconfigured
         }
 
-        public async static void SyncGrid(int id, string device)
-        {
-            long accountID = Server.clients[id].account;
-            Data.HexGrid grid = await GetGridAsync();
-
-            Packet packet = new Packet();
-            packet.Write((int)Terminal.RequestsID.SYNC_GRID);
-            string hexGrid = await Data.Serialize<Data.HexGrid>(grid);
-            packet.Write(hexGrid);
-
-            Sender.TCP_Send(id, packet);
-        }
-
-        private async static Task<Data.HexGrid> GetGridAsync()
-        {
-            Task<Data.HexGrid> task = Task.Run(() =>
-            {           
-
-                Data.HexGrid hexGrid = new Data.HexGrid();
-
-                string select_query = String.Format("SELECT x, y, hex_type FROM hex_grid;");
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
-                {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
-                    {
-                        if (reader.HasRows)
-                        {
-                            while (reader.Read())
-                            {
-                                Data.HexTile tile = new Data.HexTile();
-
-                                tile.x = int.Parse(reader["x"].ToString());
-                                tile.y = int.Parse(reader["y"].ToString());
-                                tile.hexType = int.Parse(reader["hex_type"].ToString());
-
-                                hexGrid.hexTiles.Add(tile);
-                            }
-                        }
-                    }
-                }
-
-                return hexGrid;
-            });
-            return await task;
-        }
-
         private async static Task<int> GetHexTileTypeAsync(int x_pos, int y_pos)
         {
             Task<int> task = Task.Run(() =>
@@ -635,23 +603,26 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 int hexTileType = 0;
 
-                string select_query = String.Format("SELECT hex_type FROM hex_grid WHERE x = {0} and y = {1};", x_pos, y_pos);
-                using (MySqlCommand select_command = new MySqlCommand(select_query, mysqlConnection))
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    using (MySqlDataReader reader = select_command.ExecuteReader())
+                    string select_query = String.Format("SELECT hex_type FROM hex_grid WHERE x = {0} and y = {1};", x_pos, y_pos);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
-                        if (reader.HasRows)
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
                         {
-                            while (reader.Read())
+                            if (reader.HasRows)
                             {
-                                Data.HexTile tile = new Data.HexTile();
-                      
-                                hexTileType = int.Parse(reader["hex_type"].ToString());                                
+                                while (reader.Read())
+                                {
+                                    Data.HexTile tile = new Data.HexTile();
+
+                                    hexTileType = int.Parse(reader["hex_type"].ToString());
+                                }
                             }
                         }
                     }
                 }
-
+                
                 return hexTileType;
             });
             return await task;
@@ -662,60 +633,36 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Task<bool> task = Task.Run(() =>
             {
 
-                int hexType = (int)hexTileType;
-
-                string update_query = String.Format("UPDATE hex_grid SET hex_type = {0} WHERE x = {1} and y = {2};", hexType, x_pos, y_pos);
-                using (MySqlCommand update_command = new MySqlCommand(update_query, mysqlConnection))
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    update_command.ExecuteNonQuery();
-                }
-                return true;
+                    int hexType = (int)hexTileType;
+
+                    string update_query = String.Format("UPDATE hex_grid SET hex_type = {0} WHERE x = {1} and y = {2};", hexType, x_pos, y_pos);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    return true;
+                }                
 
             });
             return await task;
         }
+
 
         private async static Task<bool> UpdateHasCastleAsync(string deviceID, int hasCastle)
         {
             Task<bool> task = Task.Run(() =>
-            {             
-                string update_query = String.Format("UPDATE accounts SET has_castle = {0} WHERE device_id = '{1}';", hasCastle, deviceID);
-                using (MySqlCommand update_command = new MySqlCommand(update_query, mysqlConnection))
-                {
-                    update_command.ExecuteNonQuery();
-                }
-                return true;
-
-            });
-            return await task;
-        }
-
-        private async static Task<bool> UpdatePlayerResourcesAsync(string deviceID, int gems, int gold, int stone, int wood, int food, int stoneProduction, int woodProduction, int foodProduction)
-        {
-            Task<bool> task = Task.Run(() =>
             {
-                string update_query = String.Format("UPDATE accounts SET gems = {0}, gold = {1}, stone = {2}, wood = {3}, food = {4}, stone_production = {5}, wood_production = {6}, food_production = {7}  WHERE device_id = '{8}';",gems, gold, stone, wood, food, stoneProduction, woodProduction, foodProduction, deviceID);
-                using (MySqlCommand update_command = new MySqlCommand(update_query, mysqlConnection))
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    update_command.ExecuteNonQuery();
-                }
-                return true;
-
-            });
-            return await task;
-        }
-
-        private async static Task<bool> UpdateBuildingProductionAsync(int stone_per_second, int wood_per_second, int food_per_second, int x_pos, int y_pos)
-        {
-            Task<bool> task = Task.Run(() =>
-            {
-                string update_query = String.Format("UPDATE hex_grid SET stone_per_second = stone_per_second + {0}, wood_per_second = wood_per_second + {1}, food_per_second = food_per_second + {2}  WHERE x = {3} AND y={4};", stone_per_second, wood_per_second, food_per_second, x_pos, y_pos);
-                using (MySqlCommand update_command = new MySqlCommand(update_query, mysqlConnection))
-                {
-                    update_command.ExecuteNonQuery();
-                }
-                return true;
-
+                    string update_query = String.Format("UPDATE accounts SET has_castle = {0} WHERE device_id = '{1}';", hasCastle, deviceID);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    return true;
+                }               
             });
             return await task;
         }
@@ -724,42 +671,193 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             Task<bool> task = Task.Run(async () =>
            {
-               List<Data.HexTile> neighbours = await Get2RingsOfNeighboursAsync(castleTile);
-               foreach(Data.HexTile neighbour in neighbours)
-               {
-                   switch (neighbour.hexType)
-                   {
-                       case (int)Terminal.HexType.FREE_LAND:
-                           await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_LAND);
-                           break;
-                       case (int)Terminal.HexType.FREE_MOUNTAIN:
-                           await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_MOUNTAIN);
-                           break;
-                       case (int)Terminal.HexType.FREE_FOREST:
-                           await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_FOREST);
-                           break;
-                       case (int)Terminal.HexType.FREE_CROPS:
-                           await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_CROPS);
-                           break;
-                   }
-                        
-               }
 
-               return true;
+               using (MySqlConnection connection = GetMySqlConnection())
+               {
+                   List<Data.HexTile> neighbours = await Get2RingsOfNeighboursAsync(castleTile);
+                   foreach (Data.HexTile neighbour in neighbours)
+                   {
+                       switch (neighbour.hexType)
+                       {
+                           case (int)Terminal.HexType.FREE_LAND:
+                               await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_LAND);
+                               break;
+                           case (int)Terminal.HexType.FREE_MOUNTAIN:
+                               await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_MOUNTAIN);
+                               break;
+                           case (int)Terminal.HexType.FREE_FOREST:
+                               await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_FOREST);
+                               break;
+                           case (int)Terminal.HexType.FREE_CROPS:
+                               await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_CROPS);
+                               break;
+                       }
+                   }
+                   return true;
+               }               
            });
             return await task;
         }
+
+        private static async Task<bool> UpdateArmyCampNeighboursAsync(Data.HexTile castleTile)
+        {
+            Task<bool> task = Task.Run(async () =>
+            {
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    List<Data.HexTile> neighbours = await Get2RingsOfNeighboursAsync(castleTile);
+                    foreach (Data.HexTile neighbour in neighbours)
+                    {
+                        switch (neighbour.hexType)
+                        {
+                            case (int)Terminal.HexType.FREE_LAND:
+                                await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_LAND);
+                                break;
+                            case (int)Terminal.HexType.FREE_MOUNTAIN:
+                                await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_MOUNTAIN);
+                                break;
+                            case (int)Terminal.HexType.FREE_FOREST:
+                                await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_FOREST);
+                                break;
+                            case (int)Terminal.HexType.FREE_CROPS:
+                                await UpdateHexTileTypeAsync(neighbour.x, neighbour.y, Terminal.HexType.PLAYER_CROPS);
+                                break;
+                        }
+                    }                 
+                    return true;
+                }
+            });
+            return await task;
+        }
+
+        private static async Task<bool> FillGapsAsync()
+        {
+            Task<bool> task = Task.Run(async () =>
+            {
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    Data.HexGrid grid = await GetGridAsync();
+
+                    foreach(Data.HexTile tile in grid.hexTiles)
+                    {
+                        if(tile.hexType == (int)Terminal.HexType.FREE_LAND || tile.hexType == (int)Terminal.HexType.FREE_MOUNTAIN || tile.hexType == (int)Terminal.HexType.FREE_FOREST || tile.hexType == (int)Terminal.HexType.FREE_CROPS)
+                        {
+                            bool isGap = true;
+                            List<Data.HexTile> neighbours = await GetNeighboursAsync(tile);
+
+                            foreach (Data.HexTile neighbour in neighbours)
+                            {
+
+                                if (neighbour.hexType == (int)Terminal.HexType.FREE_LAND || neighbour.hexType == (int)Terminal.HexType.FREE_MOUNTAIN || neighbour.hexType == (int)Terminal.HexType.FREE_FOREST || neighbour.hexType == (int)Terminal.HexType.FREE_CROPS)
+                                {
+                                    isGap = false;
+                                    break;
+                                }
+                            }
+
+                            if (isGap)
+                            {
+                                switch (tile.hexType)
+                                {
+                                    case (int)Terminal.HexType.FREE_LAND:
+                                        await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_LAND);
+                                        break;
+                                    case (int)Terminal.HexType.FREE_MOUNTAIN:
+                                        await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_MOUNTAIN);
+                                        break;
+                                    case (int)Terminal.HexType.FREE_FOREST:
+                                        await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_FOREST);
+                                        break;
+                                    case (int)Terminal.HexType.FREE_CROPS:
+                                        await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_CROPS);
+                                        break;
+                                }
+                            }
+                        }                        
+                    }                   
+                    return true;
+                }
+            });
+            return await task;
+        }
+
+
+        private async static Task<bool> UpdatePlayerResourcesAsync(string deviceID, int gems, int gold, int stone, int wood, int food, int stoneProduction, int woodProduction, int foodProduction)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE accounts SET gems = {0}, gold = {1}, stone = {2}, wood = {3}, food = {4}, stone_production = {5}, wood_production = {6}, food_production = {7}  WHERE device_id = '{8}';", gems, gold, stone, wood, food, stoneProduction, woodProduction, foodProduction, deviceID);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    return true;
+                }                
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdateBuildingProductionAsync(int stone_per_second, int wood_per_second, int food_per_second, int x_pos, int y_pos)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE hex_grid SET stone_per_second = stone_per_second + {0}, wood_per_second = wood_per_second + {1}, food_per_second = food_per_second + {2}  WHERE x = {3} AND y={4};", stone_per_second, wood_per_second, food_per_second, x_pos, y_pos);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    return true;
+                }
+               
+
+            });
+            return await task;
+        }
+
+
+
+        private async static void CollectResources()
+        {
+            await CollectResourcesAsync();
+        }
+
+
+        private async static Task<bool> CollectResourcesAsync()
+        { 
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE accounts SET stone = stone + stone_production, wood = wood + wood_production, food = food + food_production;");
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    return true;
+                }
+            });
+            return await task;
+        }
+
 
         private static async Task<List<Data.HexTile>> GetNeighboursAsync(Data.HexTile centerTile)
         {
             Task<List<Data.HexTile>> task = Task.Run(async () =>
             {
-                Data.HexGrid hexGrid = await GetGridAsync();
-                List<Data.HexTile> neighbors = new List<Data.HexTile>();
-                Data.Vector2Int currentPosition;
-
-                Data.Vector2Int[] evenDirections =
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
+                    Data.HexGrid hexGrid = await GetGridAsync();
+                    List<Data.HexTile> neighbors = new List<Data.HexTile>();
+                    Data.Vector2Int currentPosition;
+
+                    Data.Vector2Int[] evenDirections =
+                    {
                     new Data.Vector2Int(0, +1),
                     new Data.Vector2Int(+1, +1),
                     new Data.Vector2Int(+1, 0),
@@ -768,8 +866,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     new Data.Vector2Int(-1, 0),
                 };
 
-                Data.Vector2Int[] oddDirections =
-                {
+                    Data.Vector2Int[] oddDirections =
+                    {
                     new Data.Vector2Int(-1, +1),
                     new Data.Vector2Int(0, +1),
                     new Data.Vector2Int(+1, 0),
@@ -778,28 +876,28 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     new Data.Vector2Int(-1, 0),
                 };
 
-                var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
+                    var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
 
-                foreach (Data.Vector2Int direction in directions)
-                {
-                    currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
-                    currentPosition += direction;
-                    if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
+                    foreach (Data.Vector2Int direction in directions)
                     {
-                        Data.HexTile neighbor = new Data.HexTile();
-                        neighbor.x = currentPosition.x;
-                        neighbor.y = currentPosition.y;
-                        neighbor.hexType = await GetHexTileTypeAsync(currentPosition.x, currentPosition.y);
-
-                        if (neighbor != null)
+                        currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
+                        currentPosition += direction;
+                        if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
                         {
-                            neighbors.Add(neighbor);
+                            Data.HexTile neighbor = new Data.HexTile();
+                            neighbor.x = currentPosition.x;
+                            neighbor.y = currentPosition.y;
+                            neighbor.hexType = await GetHexTileTypeAsync(currentPosition.x, currentPosition.y);
+
+                            if (neighbor != null)
+                            {
+                                neighbors.Add(neighbor);
+                            }
                         }
+
                     }
-
-                }
-                return neighbors;
-
+                    return neighbors;
+                }                
             });
             return await task;
         }
@@ -808,12 +906,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             Task<List<Data.HexTile>> task = Task.Run(async () =>
             {
-                Data.HexGrid hexGrid = await GetGridAsync();
-                List<Data.HexTile> neighbors = new List<Data.HexTile>();
-                Data.Vector2Int currentPosition;
 
-                Data.Vector2Int[] evenDirections =
+                using (MySqlConnection connection = GetMySqlConnection())
                 {
+                    Data.HexGrid hexGrid = await GetGridAsync();
+                    List<Data.HexTile> neighbors = new List<Data.HexTile>();
+                    Data.Vector2Int currentPosition;
+
+                    Data.Vector2Int[] evenDirections =
+                    {
                     new Data.Vector2Int(0, +1),
                     new Data.Vector2Int(+1, +1),
                     new Data.Vector2Int(+1, 0),
@@ -834,8 +935,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     new Data.Vector2Int(-1, +2),
                 };
 
-                Data.Vector2Int[] oddDirections =
-                {
+                    Data.Vector2Int[] oddDirections =
+                    {
                     new Data.Vector2Int(-1, +1),
                     new Data.Vector2Int(0, +1),
                     new Data.Vector2Int(+1, 0),
@@ -856,28 +957,28 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     new Data.Vector2Int(-1, +2),
                 };
 
-                var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
+                    var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
 
-                foreach (Data.Vector2Int direction in directions)
-                {
-                    currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
-                    currentPosition += direction;
-                    if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
+                    foreach (Data.Vector2Int direction in directions)
                     {
-                        Data.HexTile neighbor = new Data.HexTile();
-                        neighbor.x = currentPosition.x;
-                        neighbor.y = currentPosition.y;
-                        neighbor.hexType = await GetHexTileTypeAsync(currentPosition.x, currentPosition.y);
-
-                        if (neighbor != null)
+                        currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
+                        currentPosition += direction;
+                        if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
                         {
-                            neighbors.Add(neighbor);
+                            Data.HexTile neighbor = new Data.HexTile();
+                            neighbor.x = currentPosition.x;
+                            neighbor.y = currentPosition.y;
+                            neighbor.hexType = await GetHexTileTypeAsync(currentPosition.x, currentPosition.y);
+
+                            if (neighbor != null)
+                            {
+                                neighbors.Add(neighbor);
+                            }
                         }
+
                     }
-
+                    return neighbors;
                 }
-                return neighbors;
-
             });
             return await task;
         }
