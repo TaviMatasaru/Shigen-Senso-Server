@@ -581,9 +581,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
                     string delete_query = String.Format("DELETE FROM hex_grid;");
-                    using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
+                    using (MySqlCommand delete_grid_command = new MySqlCommand(delete_query, connection))
                     {
-                        delete_command.ExecuteNonQuery();
+                        delete_grid_command.ExecuteNonQuery();
+                    }
+                    delete_query = String.Format("DELETE FROM units;");
+                    using (MySqlCommand delete_units_command = new MySqlCommand(delete_query, connection))
+                    {
+                        delete_units_command.ExecuteNonQuery();
                     }
 
                     Data.HexGrid hexGrid = new Data.HexGrid();
@@ -1102,7 +1107,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.trained, units.ready, units.trained_time, server_units.health, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.account_id = '{0}';", accountID);
+                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.trained, units.ready, units.trained_time, units.army_camp_x, units.army_camp_y, server_units.health, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.account_id = '{0}';", accountID);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -1120,6 +1125,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     int.TryParse(reader["housing"].ToString(), out unit.housing);
                                     int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
                                     float.TryParse(reader["trained_time"].ToString(), out unit.trainedTime);
+                                    int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                    int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
 
                                     int isTrue = 0;
                                     int.TryParse(reader["trained"].ToString(), out isTrue);
