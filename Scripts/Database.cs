@@ -60,37 +60,44 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return connection;
         }
 
-        private static DateTime collectTime = DateTime.Now;
+        private static DateTime collectTime = DateTime.Now;        
 
         public static void Update()
         {
+            double deltaTime = (DateTime.Now - collectTime).TotalSeconds;
+
             if((DateTime.Now - collectTime).TotalSeconds >= 1)
             {
                 collectTime = DateTime.Now;
                 CollectResources();
+                UpdateUnitTraining(deltaTime);
             }
         }
 
         public async static void AuthenticatePlayer(int id, string device)
         {
-            long account_id = await AuthenticatePlayerAsync(id, device);          
+            Data.InitializationData auth = await AuthenticatePlayerAsync(device);          
             Server.clients[id].device = device;
-            Server.clients[id].account = account_id;
+            Server.clients[id].account = auth.accountID;
 
-            await UpdateHasCastleAsync(device, 0);
-            await UpdatePlayerResourcesAsync(device, 10, 100, 3000, 3000, 3000, 0, 0, 0);
+            string authData = await Data.Serialize<Data.InitializationData>(auth);
+
+            await UpdateHasCastleAsync(auth.accountID, 0);
+            await UpdatePlayerResourcesAsync(auth.accountID, 10, 100, 3000, 3000, 3000, 0, 0, 0);
 
             Packet packet = new Packet();
+
             packet.Write((int)Terminal.RequestsID.AUTH);
-            packet.Write(account_id);
+            packet.Write(authData);
+
             Sender.TCP_Send(id, packet);
         }
 
-        private async static Task<long> AuthenticatePlayerAsync(int id, string device)
+        private async static Task<Data.InitializationData> AuthenticatePlayerAsync(string device)
         {
-            Task<long> task = Task.Run(() =>
+            Task<Data.InitializationData> task = Task.Run(() =>
             {
-                long account_id = 0;
+                Data.InitializationData initializationData = new Data.InitializationData();
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
                     string select_query = String.Format("SELECT id FROM accounts WHERE device_id = '{0}';", device);
@@ -103,7 +110,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             {
                                 while (reader.Read())
                                 {
-                                    account_id = long.Parse(reader["id"].ToString());
+                                    initializationData.accountID = long.Parse(reader["id"].ToString());
                                     userFound = true;
                                 }
                             }
@@ -115,23 +122,28 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
                         {
                             insert_command.ExecuteNonQuery();
-                            account_id = insert_command.LastInsertedId;
+                            initializationData.accountID = insert_command.LastInsertedId;
                         }
                     }
+                    initializationData.serverUnits = GetServerUnits(connection);
                 }              
 
-                return account_id;
+                return initializationData;
             });
             return await task;
         }
 
-
-        public async static void GetPlayerData(int id, string device)
+          
+        public async static void GetPlayerData(int id)
         {
             long accountID = Server.clients[id].account;
-            Data.Player data_player = await GetPlayerDataAsync(id, device);
-            
+            Data.Player data_player = await GetPlayerDataAsync(accountID);
+            List<Data.Unit> units = await GetUnitsAsync(accountID);
+
+            data_player.units = units;
+
             Packet packet = new Packet();
+
             packet.Write((int)Terminal.RequestsID.SYNC);
             string player = await Data.Serialize<Data.Player>(data_player);
             packet.Write(player);
@@ -139,7 +151,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Sender.TCP_Send(id, packet);
         }
 
-        private async static Task<Data.Player> GetPlayerDataAsync(int id, string device)
+        private async static Task<Data.Player> GetPlayerDataAsync(long accountID)
         {
             Task<Data.Player> task = Task.Run(() =>
             {
@@ -147,7 +159,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle FROM accounts WHERE device_id = '{0}';", device);
+                    string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle FROM accounts WHERE id = '{0}';", accountID);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -178,10 +190,13 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
-        public async static void BuildCastle(int id, string deviceID, int x_pos, int y_pos)
+
+        public async static void BuildCastle(int id, int x_pos, int y_pos)
         {
             int result = 0;
-            Data.Player player = await GetPlayerDataAsync(id, deviceID);
+            long accountID = Server.clients[id].account;
+
+            Data.Player player = await GetPlayerDataAsync(accountID);
             if(player.hasCastle == false)
             {
                 int selectedTileTyle = await GetHexTileTypeAsync(x_pos, y_pos);
@@ -193,7 +208,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 if ((Terminal.HexType)selectedTileTyle == Terminal.HexType.FREE_LAND)
                 {
-                    await UpdateHasCastleAsync(deviceID, 1);                                       
+                    await UpdateHasCastleAsync(accountID, 1);                                       
                     await UpdateHexTileTypeAsync(x_pos, y_pos, Terminal.HexType.PLAYER_CASTLE);
                     await UpdateCastleNeighboursAsync(castleTile);
                     player.hasCastle = true;
@@ -207,8 +222,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Sender.TCP_Send(id, packet);
         }
 
-        public async static void BuildStoneMine(int id, string deviceID, int x_pos, int y_pos)
+        public async static void BuildStoneMine(int id, int x_pos, int y_pos)
         {
+            long accountID = Server.clients[id].account;
+
             int result = 0;
                                    
             int selectedTileTyle = await GetHexTileTypeAsync(x_pos, y_pos);
@@ -220,10 +237,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             if ((Terminal.HexType)selectedTileTyle == Terminal.HexType.PLAYER_LAND)
             {
-                Data.Player player = await GetPlayerDataAsync(id, deviceID);
-                Data.ServerBuilding serverBuilding = await GetServerBuildingAsync("stone_mine", 1);
-
-                //if(player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
+                Data.Player player = await GetPlayerDataAsync(accountID);
+                Data.ServerBuilding serverBuilding = await GetServerBuildingAsync("stone_mine", 1);             
 
                 if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                 {
@@ -239,7 +254,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             stonePerSecond += serverBuilding.stonePerSecond;
                         }
                     }
-                    await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction + stonePerSecond, player.woodProduction, player.foodProduction);
+                    await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction + stonePerSecond, player.woodProduction, player.foodProduction);
                     await UpdateBuildingProductionAsync(stonePerSecond, 0, 0, x_pos, y_pos);
 
                     result = 1;
@@ -257,8 +272,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Sender.TCP_Send(id, packet);
         }
 
-        public async static void BuildSawmill(int id, string deviceID, int x_pos, int y_pos)
+        public async static void BuildSawmill(int id, int x_pos, int y_pos)
         {
+            long accountID = Server.clients[id].account;
+
             int result = 0;
 
             int selectedTileTyle = await GetHexTileTypeAsync(x_pos, y_pos);
@@ -270,10 +287,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             if ((Terminal.HexType)selectedTileTyle == Terminal.HexType.PLAYER_LAND)
             {
-                Data.Player player = await GetPlayerDataAsync(id, deviceID);
+                Data.Player player = await GetPlayerDataAsync(accountID);
                 Data.ServerBuilding serverBuilding = await GetServerBuildingAsync("sawmill", 1);
-
-                //if(player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
+              
 
                 if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                 {
@@ -289,7 +305,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             woodPerSecond += serverBuilding.woodPerSecond;
                         }
                     }
-                    await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction + woodPerSecond, player.foodProduction);
+                    await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction + woodPerSecond, player.foodProduction);
                     await UpdateBuildingProductionAsync(0, woodPerSecond, 0, x_pos, y_pos);
 
                     result = 1;
@@ -307,8 +323,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Sender.TCP_Send(id, packet);
         }
 
-        public async static void BuildFarm(int id, string deviceID, int x_pos, int y_pos)
+        public async static void BuildFarm(int id, int x_pos, int y_pos)
         {
+            long accountID = Server.clients[id].account;
+
             int result = 0;
 
             int selectedTileTyle = await GetHexTileTypeAsync(x_pos, y_pos);
@@ -320,13 +338,13 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             if ((Terminal.HexType)selectedTileTyle == Terminal.HexType.PLAYER_LAND)
             {
-                Data.Player player = await GetPlayerDataAsync(id, deviceID);
+                Data.Player player = await GetPlayerDataAsync(accountID);
                 Data.ServerBuilding serverBuilding = await GetServerBuildingAsync("farm", 1);
-                
+                 
 
                 if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                 {
-                    await UpdateHexTileTypeAsync(x_pos, y_pos, Terminal.HexType.PLAYER_SAWMILL);
+                    await UpdateHexTileTypeAsync(x_pos, y_pos, Terminal.HexType.PLAYER_FARM);
 
                     List<Data.HexTile> neighbours = await GetNeighboursAsync(farmTile);
 
@@ -338,7 +356,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             foodPerSecond += serverBuilding.foodPerSecond;
                         }
                     }
-                    await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction + foodPerSecond);
+                    await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction + foodPerSecond);
                     await UpdateBuildingProductionAsync(0, 0, foodPerSecond, x_pos, y_pos);
 
                     result = 1;
@@ -356,8 +374,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Sender.TCP_Send(id, packet);
         }
 
-        public async static void BuildArmyCamp(int id, string deviceID, int x_pos, int y_pos)
+        public async static void BuildArmyCamp(int id, int x_pos, int y_pos)
         {
+            long accountID = Server.clients[id].account;
+
             int result = 0;
 
             int selectedTileTyle = await GetHexTileTypeAsync(x_pos, y_pos);
@@ -369,7 +389,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             if ((Terminal.HexType)selectedTileTyle == Terminal.HexType.FREE_LAND)
             {
-                Data.Player player = await GetPlayerDataAsync(id, deviceID);
+                Data.Player player = await GetPlayerDataAsync(accountID);
                 Data.ServerBuilding serverBuilding = await GetServerBuildingAsync("army_camp", 1);
 
                 if(player.hasCastle == true)
@@ -392,7 +412,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         {
                             await UpdateHexTileTypeAsync(x_pos, y_pos, Terminal.HexType.PLAYER_ARMY_CAMP);
                             await UpdateArmyCampNeighboursAsync(armyCampTile);
-                            await UpdatePlayerResourcesAsync(deviceID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction);
+                            await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction);
                             result = 3;
                         }
                         else
@@ -417,6 +437,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
        
 
+        
         private async static Task<Data.ServerBuilding> GetServerBuildingAsync(string buildingID, int level)
         {
             Task<Data.ServerBuilding> task = Task.Run(() =>
@@ -425,7 +446,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id, required_gold, required_wood, required_stone, stone_per_second, wood_per_second, food_per_second FROM server_buildings WHERE global_id = '{0}' AND level = {1};", buildingID, level);
+                    string select_query = String.Format("SELECT id, required_gold, required_wood, required_stone, stone_per_second, wood_per_second, food_per_second, health, max_capacity FROM server_buildings WHERE global_id = '{0}' AND level = {1};", buildingID, level);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -443,6 +464,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     data.stonePerSecond = int.Parse(reader["stone_per_second"].ToString());
                                     data.woodPerSecond = int.Parse(reader["wood_per_second"].ToString());
                                     data.foodPerSecond = int.Parse(reader["food_per_second"].ToString());
+                                    data.health = int.Parse(reader["health"].ToString());
+                                    data.max_capacity = int.Parse(reader["max_capacity"].ToString());
                                 }
                             }
                         }
@@ -453,10 +476,94 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-
-        public async static void GenerateNewGrid(int id, string deviceID)
+        private async static Task<Data.HexTile> GetArmyCampDataAsync(int x, int y)
         {
+            Task<Data.HexTile> task = Task.Run(() =>
+            {
+                Data.HexTile data = new Data.HexTile();
 
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT x, y, health, capacity FROM hex_grid WHERE x = {0} AND y = {1};", x, y);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {                                    
+                                    data.x = int.Parse(reader["x"].ToString());
+                                    data.y = int.Parse(reader["y"].ToString());
+                                    data.health = int.Parse(reader["health"].ToString());
+                                    data.capacity = int.Parse(reader["capacity"].ToString());
+                                }
+                            }
+                        }
+                    }
+                }
+                return data;
+            });
+            return await task;
+        }
+
+
+        private static List<Data.ServerUnit> GetServerUnits(MySqlConnection connection)
+        {
+            List<Data.ServerUnit> units = new List<Data.ServerUnit>();
+            string query = String.Format("SELECT global_id, level, required_food, train_time, health, housing FROM server_units;");
+            using (MySqlCommand command = new MySqlCommand(query, connection))
+            {
+                using (MySqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.HasRows)
+                    {
+                        while (reader.Read())
+                        {
+                            Data.ServerUnit unit = new Data.ServerUnit();
+                            unit.id = (Data.UnitID)Enum.Parse(typeof(Data.UnitID), reader["global_id"].ToString());
+                            int.TryParse(reader["level"].ToString(), out unit.level);
+                            int.TryParse(reader["required_food"].ToString(), out unit.requiredFood);
+                            int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
+                            int.TryParse(reader["health"].ToString(), out unit.health);
+                            int.TryParse(reader["housing"].ToString(), out unit.housing);
+                            units.Add(unit);
+                        }
+                    }
+                }
+            }
+            return units;
+        }
+
+        private static Data.ServerUnit GetServerUnit(MySqlConnection connection, string unitID, int level)
+        {
+            Data.ServerUnit unit = new Data.ServerUnit();
+            string query = String.Format("SELECT global_id, level, required_food, train_time, health, housing FROM server_units WHERE global_id = '{0}' AND level = {1};", unitID, level);
+            using (MySqlCommand command = new MySqlCommand(query, connection))
+            {
+                using (MySqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.HasRows)
+                    {
+                        while (reader.Read())
+                        {                                                
+                            unit.id = (Data.UnitID)Enum.Parse(typeof(Data.UnitID), reader["global_id"].ToString());
+                            int.TryParse(reader["level"].ToString(), out unit.level);
+                            int.TryParse(reader["required_food"].ToString(), out unit.requiredFood);
+                            int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
+                            int.TryParse(reader["health"].ToString(), out unit.health);
+                            int.TryParse(reader["housing"].ToString(), out unit.housing);                           
+                        }
+                    }
+                }
+            }
+            return unit;
+        }
+
+
+        public async static void GenerateNewGrid(int id)
+        {
+            //TODO: Game id
             Data.HexGrid hexGrid = await GenerateGridAsync();       
 
             Packet packet = new Packet();
@@ -507,8 +614,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        public async static void SyncGrid(int id, string device)
+        public async static void SyncGrid(int id)
         {
+            //TODO: Sync the requested Game Grid
             long accountID = Server.clients[id].account;            
             Data.HexGrid grid = await GetGridAsync();
 
@@ -553,6 +661,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }
+
 
 
         private static int GetRandomHexTile()
@@ -650,13 +759,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
-        private async static Task<bool> UpdateHasCastleAsync(string deviceID, int hasCastle)
+
+        private async static Task<bool> UpdateHasCastleAsync(long accountID, int hasCastle)
         {
             Task<bool> task = Task.Run(() =>
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string update_query = String.Format("UPDATE accounts SET has_castle = {0} WHERE device_id = '{1}';", hasCastle, deviceID);
+                    string update_query = String.Format("UPDATE accounts SET has_castle = {0} WHERE id = '{1}';", hasCastle, accountID);
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
@@ -784,13 +894,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
-        private async static Task<bool> UpdatePlayerResourcesAsync(string deviceID, int gems, int gold, int stone, int wood, int food, int stoneProduction, int woodProduction, int foodProduction)
+
+        private async static Task<bool> UpdatePlayerResourcesAsync(long accountID, int gems, int gold, int stone, int wood, int food, int stoneProduction, int woodProduction, int foodProduction)
         {
             Task<bool> task = Task.Run(() =>
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string update_query = String.Format("UPDATE accounts SET gems = {0}, gold = {1}, stone = {2}, wood = {3}, food = {4}, stone_production = {5}, wood_production = {6}, food_production = {7}  WHERE device_id = '{8}';", gems, gold, stone, wood, food, stoneProduction, woodProduction, foodProduction, deviceID);
+                    string update_query = String.Format("UPDATE accounts SET gems = {0}, gold = {1}, stone = {2}, wood = {3}, food = {4}, stone_production = {5}, wood_production = {6}, food_production = {7}  WHERE id = '{8}';", gems, gold, stone, wood, food, stoneProduction, woodProduction, foodProduction, accountID);
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
@@ -826,7 +937,6 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             await CollectResourcesAsync();
         }
-
 
         private async static Task<bool> CollectResourcesAsync()
         { 
@@ -979,6 +1089,207 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     }
                     return neighbors;
                 }
+            });
+            return await task;
+        }
+
+
+        private async static Task<List<Data.Unit>> GetUnitsAsync(long accountID)
+        {
+            Task<List<Data.Unit>> task = Task.Run(() =>
+            {
+                List<Data.Unit> data = new List<Data.Unit>();
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.trained, units.ready, units.trained_time, server_units.health, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.account_id = '{0}';", accountID);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    Data.Unit unit = new Data.Unit();
+
+                                    unit.id = (Data.UnitID)Enum.Parse(typeof(Data.UnitID), reader["global_id"].ToString());
+                                    long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                    int.TryParse(reader["level"].ToString(), out unit.level);
+                                    int.TryParse(reader["health"].ToString(), out unit.health);
+                                    int.TryParse(reader["housing"].ToString(), out unit.housing);
+                                    int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
+                                    float.TryParse(reader["trained_time"].ToString(), out unit.trainedTime);
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["trained"].ToString(), out isTrue);
+                                    unit.trained = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["ready"].ToString(), out isTrue);
+                                    unit.ready = isTrue > 0;
+
+                                    data.Add(unit);
+                                }
+                            }
+                        }
+                    }
+                }
+                return data;
+            });
+            return await task;
+        }
+
+
+        public async static void TrainUnit(int clientID, string unitGlobalID, int level, int armyCamp_x, int armyCamp_y)
+        {
+            long accountID = Server.clients[clientID].account;
+            int result = await TrainUnitAsync(accountID, unitGlobalID, level, armyCamp_x, armyCamp_y);
+
+            Packet packet = new Packet();
+            packet.Write((int)Terminal.RequestsID.TRAIN);                    
+            packet.Write(result);
+            packet.Write(unitGlobalID);
+            packet.Write(armyCamp_x);
+            packet.Write(armyCamp_y);
+            Sender.TCP_Send(clientID, packet);
+        }
+
+        private async static Task<int> TrainUnitAsync(long accountID, string unitGlobalID, int level, int armyCamp_x, int armyCamp_y)
+        {
+            Task<int> task = Task.Run(async () =>
+            {
+                int response = 0;
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    Data.ServerUnit unit = GetServerUnit(connection, unitGlobalID, level);
+                    if(unit != null)
+                    {
+                        Data.ServerBuilding serverArmyCamp = await GetServerBuildingAsync("army_camp", 1);
+                        Data.HexTile unitArmyCamp = await GetArmyCampDataAsync(armyCamp_x, armyCamp_y);
+                        
+                        int max_capacity = serverArmyCamp.max_capacity;
+                        int armyCampCapacity = unitArmyCamp.capacity;
+
+                        if(unit.housing + armyCampCapacity <= max_capacity)
+                        {
+                            Data.Player player = await GetPlayerDataAsync(accountID);
+
+                            if(player.food >= unit.requiredFood)
+                            {
+                                await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold, player.stone, player.wood, player.food - unit.requiredFood, player.stoneProduction, player.woodProduction, player.foodProduction);
+
+                                string insertQuery = String.Format("INSERT INTO units (global_id, level, account_id, army_camp_x, army_camp_y) VALUES ('{0}', {1}, {2}, {3}, {4});", unitGlobalID, level, accountID, armyCamp_x, armyCamp_y);
+                                using (MySqlCommand insertCommand = new MySqlCommand(insertQuery, connection))
+                                {
+                                    insertCommand.ExecuteNonQuery();
+                                }
+
+                                string updateQuery = String.Format("UPDATE hex_grid SET capacity = capacity + {0}  WHERE x = {1} AND y={2};", unit.housing, armyCamp_x, armyCamp_y);
+                                using (MySqlCommand updateCommand = new MySqlCommand(updateQuery, connection))
+                                {
+                                    updateCommand.ExecuteNonQuery();
+                                }
+
+                                response = 3; //Train started
+                            }
+                            else
+                            {
+                                response = 2; // Not enough food
+                            }
+                        }
+                        else
+                        {
+                            response = 1; //Not enough space in army camp
+                        }
+                        
+                    }
+
+                }
+                return response;
+            });
+            return await task;
+        }
+
+
+        public async static void CancelTrainUnit(int clientID, string unitGlobalID, int armyCamp_x, int armyCamp_y)
+        {
+            long accountID = Server.clients[clientID].account;
+
+            Packet packet = new Packet();
+            packet.Write((int)Terminal.RequestsID.CANCEL_TRAIN);           
+            int result = await CancelTrainUnitAsync(accountID, unitGlobalID, armyCamp_x, armyCamp_y);
+            packet.Write(result);
+            packet.Write(armyCamp_x);
+            packet.Write(armyCamp_y);
+            Sender.TCP_Send(clientID, packet);
+        }
+
+        private async static Task<int> CancelTrainUnitAsync(long accountID, string unitGlobalID, int armyCamp_x, int armyCamp_y)
+        {
+            Task<int> task = Task.Run(async () =>
+            {
+                int response = 0;
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string query = String.Format("DELETE FROM units WHERE global_id = '{0}' AND account_id = {1} AND x = {2} AND y = {3} AND ready <= 0", unitGlobalID, accountID, armyCamp_x, armyCamp_y);
+                    using(MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        command.ExecuteNonQuery();
+                        response = 1;
+                    }  
+                }
+                return response;
+            });
+            return await task;
+        }
+
+        private static void GeneralUpdateUnitTraining(MySqlConnection connection, float deltaTime)
+        {
+            string query = String.Format("UPDATE units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level SET trained = 1 AND ready = 1 WHERE units.trained_time >= server_units.train_time");
+            using (MySqlCommand command = new MySqlCommand(query, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            query = String.Format("UPDATE units AS t1 INNER JOIN (SELECT units.id FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level WHERE units.trained <= 0 AND units.trained_time < server_units.train_time GROUP BY units.account_id) t2 ON t1.id = t2.id SET trained_time = trained_time + {0}", deltaTime);
+            using (MySqlCommand command = new MySqlCommand(query, connection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            //query = String.Format("UPDATE units AS t1 INNER JOIN (SELECT units.id, (IFNULL(buildings.capacity, 0) - IFNULL(t.occupied, 0)) AS capacity, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level LEFT JOIN (SELECT buildings.account_id, SUM(server_buildings.capacity) AS capacity FROM buildings LEFT JOIN server_buildings ON buildings.global_id = server_buildings.global_id AND buildings.level = server_buildings.level WHERE buildings.global_id = 'armycamp' AND buildings.level > 0 GROUP BY buildings.account_id) AS buildings ON units.account_id = buildings.account_id LEFT JOIN (SELECT units.account_id, SUM(server_units.housing) AS occupied FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level WHERE units.ready > 0 GROUP BY units.account_id) AS t ON units.account_id = t.account_id WHERE units.trained > 0 AND units.ready <= 0 GROUP BY units.account_id) t2 ON t1.id = t2.id SET ready = 1 WHERE housing <= capacity");
+            //using (MySqlCommand command = new MySqlCommand(query, connection))
+            //{
+            //    command.ExecuteNonQuery();
+        }
+
+
+
+        private async static void UpdateUnitTraining(double  deltaTime)
+        {
+            await UpdateUnitTrainingAsync(deltaTime);
+        }
+
+        private async static Task<bool> UpdateUnitTrainingAsync(double deltaTime)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string query = String.Format("UPDATE units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level SET units.trained = 1, units.ready = 1 WHERE units.trained_time >= server_units.train_time");
+                    using (MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+
+                    query = String.Format("UPDATE units AS t1 INNER JOIN (SELECT units.id FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level WHERE units.trained <= 0 AND units.trained_time < server_units.train_time GROUP BY units.account_id) t2 ON t1.id = t2.id SET trained_time = trained_time + {0}", deltaTime);
+                    using (MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                }
+                return true;
             });
             return await task;
         }

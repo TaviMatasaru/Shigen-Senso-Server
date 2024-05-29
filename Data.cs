@@ -23,15 +23,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int foodProduction = 0;
 
             public bool hasCastle = false;
+
+            public List<Unit> units = new List<Unit>();
         }
 
-        public class Building
+        public class InitializationData
         {
-            public string id = "";
-            public long databaseID = 0;
-            public int level = 0;
-            public int x = 0;
-            public int y = 0;
+            public long accountID = 0;
+            public List<ServerUnit> serverUnits = new List<ServerUnit>();
         }
 
         public class ServerBuilding
@@ -47,6 +46,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int stonePerSecond = 0;
             public int woodPerSecond = 0;
             public int foodPerSecond = 0;
+
+            public int health = 0;
+            public int max_capacity = 0;
         }
 
         public class HexTile
@@ -63,6 +65,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int stonePerSecond = 0;
             public int woodPerSecond = 0;
             public int foodPerSecond = 0;
+
+            public int health = 0;
+
+            public int capacity = 0;
         }
 
         public class HexGrid
@@ -72,6 +78,36 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public List<HexTile> hexTiles = new List<HexTile>();
         }
 
+        public enum UnitID
+        {
+            barbarian,
+            archer
+        }
+
+        public class Unit
+        {
+            public UnitID id = UnitID.barbarian;
+            public int level = 0;
+            public long databaseID = 0;
+            public int housing = 1;
+            public bool trained = false;
+            public bool ready = false;
+            public int health = 0;
+            public int trainTime = 0;
+            public float trainedTime = 0;
+            public int armyCamp_x = 0;
+            public int armyCamp_y = 0;
+        }
+
+        public class ServerUnit
+        {
+            public UnitID id = UnitID.barbarian;
+            public int level = 0;
+            public int requiredFood = 0;
+            public int housing = 1;
+            public int health = 0;
+            public int trainTime = 0;
+        }
 
         public async static Task<string> Serialize<T>(this T target)
         {

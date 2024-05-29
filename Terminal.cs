@@ -40,8 +40,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             BUILD_STONE_MINE = 6,
             BUILD_SAWMILL = 7,
             BUILD_FARM = 8,
-            BUILD_ARMY_CAMP = 9
-            
+            BUILD_ARMY_CAMP = 9,
+            TRAIN = 10,
+            CANCEL_TRAIN = 11
         }
 
         public enum HexType
@@ -72,55 +73,61 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     Database.AuthenticatePlayer(clientID, deviceID);
                     break;
 
-                case RequestsID.SYNC:
-                    deviceID = packet.ReadString();
-                    Database.GetPlayerData(clientID, deviceID);
+                case RequestsID.SYNC:                    
+                    Database.GetPlayerData(clientID);
                     break;
 
-                case RequestsID.NEW_GRID:
-                    deviceID = packet.ReadString();                    
-                    Database.GenerateNewGrid(clientID, deviceID);
+                case RequestsID.NEW_GRID:                                       
+                    Database.GenerateNewGrid(clientID);
                     break;
 
                 case RequestsID.SYNC_GRID:
-                    deviceID = packet.ReadString();
-                    Database.SyncGrid(clientID, deviceID);
+                    Database.SyncGrid(clientID);
                     break;
 
 
                 case RequestsID.BUILD_CASTLE:
-                    deviceID = packet.ReadString();
                     int castle_x_pos = packet.ReadInt();
                     int castle_y_pos = packet.ReadInt();
-                    Database.BuildCastle(clientID, deviceID, castle_x_pos, castle_y_pos);
+                    Database.BuildCastle(clientID, castle_x_pos, castle_y_pos);
                     break;
 
                 case RequestsID.BUILD_STONE_MINE:
-                    deviceID = packet.ReadString();
                     int stoneMine_x_pos = packet.ReadInt();
                     int stoneMine_y_pos = packet.ReadInt();
-                    Database.BuildStoneMine(clientID, deviceID, stoneMine_x_pos, stoneMine_y_pos);
+                    Database.BuildStoneMine(clientID, stoneMine_x_pos, stoneMine_y_pos);
                     break;
 
                 case RequestsID.BUILD_SAWMILL:
-                    deviceID = packet.ReadString();
                     int sawmill_x_pos = packet.ReadInt();
                     int sawmill_y_pos = packet.ReadInt();
-                    Database.BuildSawmill(clientID, deviceID, sawmill_x_pos, sawmill_y_pos);
+                    Database.BuildSawmill(clientID, sawmill_x_pos, sawmill_y_pos);
                     break;
 
                 case RequestsID.BUILD_FARM:
-                    deviceID = packet.ReadString();
                     int farm_x_pos = packet.ReadInt();
                     int farm_y_pos = packet.ReadInt();
-                    Database.BuildFarm(clientID, deviceID, farm_x_pos, farm_y_pos);
+                    Database.BuildFarm(clientID, farm_x_pos, farm_y_pos);
                     break;
 
                 case RequestsID.BUILD_ARMY_CAMP:
-                    deviceID = packet.ReadString();
                     int armyCamp_x_pos = packet.ReadInt();
                     int armyCamp_y_pos = packet.ReadInt();
-                    Database.BuildArmyCamp(clientID, deviceID, armyCamp_x_pos, armyCamp_y_pos);
+                    Database.BuildArmyCamp(clientID, armyCamp_x_pos, armyCamp_y_pos);
+                    break;
+
+                case RequestsID.TRAIN:     
+                    string trainUnitGlobalID = packet.ReadString();
+                    int train_armyCamp_x = packet.ReadInt();
+                    int train_armyCamp_y = packet.ReadInt();                  
+                    Database.TrainUnit(clientID, trainUnitGlobalID, 1, train_armyCamp_x, train_armyCamp_y);
+                    break;
+
+                case RequestsID.CANCEL_TRAIN:
+                    string cancelTrainUnitGlobalID = packet.ReadString();
+                    int cancelTrain_armyCamp_x = packet.ReadInt();
+                    int cancelTrain_armyCamp_y = packet.ReadInt();
+                    Database.CancelTrainUnit(clientID, cancelTrainUnitGlobalID, cancelTrain_armyCamp_x, cancelTrain_armyCamp_y);
                     break;
             }      
         }
