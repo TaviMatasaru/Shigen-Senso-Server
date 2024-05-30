@@ -42,7 +42,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             BUILD_FARM = 8,
             BUILD_ARMY_CAMP = 9,
             TRAIN = 10,
-            CANCEL_TRAIN = 11
+            CANCEL_TRAIN = 11,
+            SEARCH = 12,
+            CANCEL_SEARCH = 13
         }
 
         public enum HexType
@@ -51,15 +53,24 @@ namespace DevelopersHub.RealtimeNetworking.Server
             FREE_MOUNTAIN = 1,
             FREE_FOREST = 2,
             FREE_CROPS = 3,
-            PLAYER_LAND = 4,
-            PLAYER_MOUNTAIN = 5,
-            PLAYER_FOREST = 6,
-            PLAYER_CROPS = 7,
-            PLAYER_CASTLE = 8,
-            PLAYER_STONE_MINE = 9,
-            PLAYER_SAWMILL = 10,
-            PLAYER_FARM = 11,
-            PLAYER_ARMY_CAMP = 12
+            PLAYER1_LAND = 4,
+            PLAYER1_MOUNTAIN = 5,
+            PLAYER1_FOREST = 6,
+            PLAYER1_CROPS = 7,
+            PLAYER1_CASTLE = 8,
+            PLAYER1_STONE_MINE = 9,
+            PLAYER1_SAWMILL = 10,
+            PLAYER1_FARM = 11,
+            PLAYER1_ARMY_CAMP = 12,
+            PLAYER2_LAND = 13,
+            PLAYER2_MOUNTAIN = 14,
+            PLAYER2_FOREST = 15,
+            PLAYER2_CROPS = 16,
+            PLAYER2_CASTLE = 17,
+            PLAYER2_STONE_MINE = 18,
+            PLAYER2_SAWMILL = 19,
+            PLAYER2_FARM = 20,
+            PLAYER2_ARMY_CAMP = 21
         }
 
         public static void ReceivedPacket(int clientID, Packet packet)
@@ -77,9 +88,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     Database.GetPlayerData(clientID);
                     break;
 
-                case RequestsID.NEW_GRID:                                       
-                    Database.GenerateNewGrid(clientID);
-                    break;
+                //case RequestsID.NEW_GRID:
+                //    Database.GenerateNewGrid(clientID);
+                //    break;
 
                 case RequestsID.SYNC_GRID:
                     Database.SyncGrid(clientID);
@@ -128,6 +139,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     int cancelTrain_armyCamp_x = packet.ReadInt();
                     int cancelTrain_armyCamp_y = packet.ReadInt();
                     Database.CancelTrainUnit(clientID, cancelTrainUnitGlobalID, cancelTrain_armyCamp_x, cancelTrain_armyCamp_y);
+                    break;
+
+                case RequestsID.SEARCH:
+                    Database.StartSearching(clientID);
+                    break;
+
+                case RequestsID.CANCEL_SEARCH:
+                    Database.CancelSearching(clientID);
                     break;
             }      
         }

@@ -24,6 +24,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             public bool hasCastle = false;
 
+            public int isOnline = 0;
+            public int isSearching = 0;
+            public int inGame = 0;
+            public long gameID = 0;
+            public int isPlayer1 = 0;
+
             public List<Unit> units = new List<Unit>();
         }
 
