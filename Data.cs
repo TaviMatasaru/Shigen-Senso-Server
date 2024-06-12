@@ -23,6 +23,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int foodProduction = 0;
 
             public bool hasCastle = false;
+            public int castle_x = 0;
+            public int castle_y = 0;
 
             public int isOnline = 0;
             public int isSearching = 0;
@@ -82,7 +84,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int rows = 20;
             public int columns = 20;
             public List<HexTile> hexTiles = new List<HexTile>();
-        }
+        }        
 
         public enum UnitID
         {
@@ -93,16 +95,26 @@ namespace DevelopersHub.RealtimeNetworking.Server
         public class Unit
         {
             public UnitID id = UnitID.barbarian;
+            public int gameID = 0;
             public int level = 0;
             public long databaseID = 0;
             public int housing = 1;
             public bool trained = false;
-            public bool ready = false;
+            public bool ready_player1 = false;
+            public bool ready_player2 = false;
             public int health = 0;
             public int trainTime = 0;
             public float trainedTime = 0;
             public int armyCamp_x = 0;
             public int armyCamp_y = 0;
+            public int current_x = 0;
+            public int current_y = 0;
+            public int target_x = 0;
+            public int target_y = 0;
+            public bool isPlayer1Unit = true;
+
+            public string serializedPath = "test";
+            
         }
 
         public class ServerUnit
@@ -114,6 +126,45 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int health = 0;
             public int trainTime = 0;
         }
+
+
+        public class PathNode
+        {
+            public HexTile tile = new HexTile();
+            public int gCost; // Cost from start node
+            public int hCost; // Heuristic cost to end node
+            public int FCost => gCost + hCost; // Total cost
+            public PathNode cameFromNode; // To track the path
+
+            public PathNode(HexTile tile)
+            {
+                this.tile = tile;
+            }
+            public PathNode()
+            {
+
+            }
+
+            public bool IsWalkable()
+            {
+                switch ((Terminal.HexType)tile.hexType)
+                {
+                    case Terminal.HexType.FREE_MOUNTAIN:
+                    case Terminal.HexType.FREE_FOREST:
+                    //case Player.HexType.FREE_CROPS:
+                    case Terminal.HexType.PLAYER1_MOUNTAIN:
+                    case Terminal.HexType.PLAYER1_FOREST:
+                    case Terminal.HexType.PLAYER2_MOUNTAIN:
+                    case Terminal.HexType.PLAYER2_FOREST:
+                        //case Player.HexType.PLAYER_CROPS:
+                        return false;
+                    default:
+                        return true;
+                }
+            }
+        }
+
+
 
         public async static Task<string> Serialize<T>(this T target)
         {

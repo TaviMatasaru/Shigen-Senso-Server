@@ -44,7 +44,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             TRAIN = 10,
             CANCEL_TRAIN = 11,
             SEARCH = 12,
-            CANCEL_SEARCH = 13
+            CANCEL_SEARCH = 13,            
+            UNIT_READY = 14,            
         }
 
         public enum HexType
@@ -86,11 +87,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 case RequestsID.SYNC:                    
                     Database.GetPlayerData(clientID);
-                    break;
-
-                //case RequestsID.NEW_GRID:
-                //    Database.GenerateNewGrid(clientID);
-                //    break;
+                    break;               
 
                 case RequestsID.SYNC_GRID:
                     Database.SyncGrid(clientID);
@@ -148,6 +145,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 case RequestsID.CANCEL_SEARCH:
                     Database.CancelSearching(clientID);
                     break;
+
+                case RequestsID.UNIT_READY:
+                    long readyUnitDatabaseID = packet.ReadLong();
+                    int grid_x = packet.ReadInt();
+                    int grid_y = packet.ReadInt();
+                    int isPlayer1 = packet.ReadInt();
+                    Database.UpdateUnitReady(clientID, readyUnitDatabaseID, grid_x, grid_y, isPlayer1);
+                    break;
+
             }      
         }
 

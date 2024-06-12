@@ -71,6 +71,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 collectTime = DateTime.Now;
                 CollectResources();
                 UpdateUnitTraining(deltaTime);
+                UpdateUnitsCoords();
                 GameMaker();
             }
         }
@@ -83,7 +84,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             string authData = await Data.Serialize<Data.InitializationData>(auth);
 
-            await UpdateHasCastleAsync(auth.accountID, 0);
+            await UpdateHasCastleAsync(auth.accountID, 0, 0, 0);
             await UpdatePlayerResourcesAsync(auth.accountID, 10, 100, 3000, 3000, 3000, 0, 0, 0);
 
             Packet packet = new Packet();
@@ -146,8 +147,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             long accountID = Server.clients[id].account;
             Data.Player data_player = await GetPlayerDataAsync(accountID);
             List<Data.Unit> units = await GetUnitsAsync(accountID);
-
-            data_player.units = units;
+            
+            data_player.units = units;            
 
             Packet packet = new Packet();
 
@@ -166,7 +167,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle, is_online, is_searching, in_game, game_id, is_player_1 FROM accounts WHERE id = '{0}';", accountID);
+                    string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle, is_online, is_searching, in_game, game_id, is_player_1, castle_x, castle_y FROM accounts WHERE id = '{0}';", accountID);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -175,7 +176,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             {
                                 while (reader.Read())
                                 {
-                                    // data.id = long.Parse(reader["id"].ToString());
+                                    //data.id = long.Parse(reader["id"].ToString());
                                     data.gold = int.Parse(reader["gold"].ToString());
                                     data.gems = int.Parse(reader["gems"].ToString());
                                     data.stone = int.Parse(reader["stone"].ToString());
@@ -190,11 +191,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     data.inGame = int.Parse(reader["in_game"].ToString());
                                     data.gameID = long.Parse(reader["game_id"].ToString());
                                     data.isPlayer1 = int.Parse(reader["is_player_1"].ToString());
+                                    data.castle_x = int.Parse(reader["castle_x"].ToString());
+                                    data.castle_y = int.Parse(reader["castle_y"].ToString());
 
                                 }
                             }
                         }
                     }
+                    connection.Close();
                 }                  
                 return data;
             });
@@ -245,7 +249,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                         if (canBuild)
                         {
-                            await UpdateHasCastleAsync(accountID, 1);
+                            await UpdateHasCastleAsync(accountID, 1, x_pos, y_pos);
 
                             if(player.isPlayer1 == 1)
                             {
@@ -657,6 +661,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             }
                         }
                     }
+                    connection.Close();
                 }                
                 return data;
             });
@@ -688,6 +693,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             }
                         }
                     }
+                    connection.Close();
                 }
                 return data;
             });
@@ -746,19 +752,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             }
             return unit;
         }
-
-
-        //public async static void GenerateNewGrid(int gameID)
-        //{
-        //    await GenerateGridAsync(gameID);
-
-        //    Packet packet = new Packet();
-        //    packet.Write(3);
-        //    string grid = await Data.Serialize<Data.HexGrid>(hexGrid);
-        //    packet.Write(grid);
-        //    Sender.TCP_Send(id, packet);
-
-        //}
+    
 
         private async static Task<bool> GenerateGridAsync(long gameID)
         {
@@ -777,7 +771,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         delete_units_command.ExecuteNonQuery();
                     }
 
-                    Data.HexGrid hexGrid = new Data.HexGrid();
+                    Data.HexGrid hexGrid = new Data.HexGrid();                    
 
                     for (int x = 0; x < hexGrid.rows; x++)
                     {
@@ -799,6 +793,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             }
                         }
                     }
+                    connection.Close();
                     return true;
                 }                
             });
@@ -807,7 +802,6 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         public async static void SyncGrid(int id)
         {
-            //TODO: Sync the requested Game Grid
             long accountID = Server.clients[id].account;
             Data.Player player = await GetPlayerDataAsync(accountID);
             Data.HexGrid grid = await GetGridAsync(player.gameID);
@@ -848,6 +842,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             }
                         }
                     }
+                    connection.Close();
                 }                
                 return hexGrid;
             });
@@ -922,6 +917,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             }
                         }
                     }
+                    connection.Close();
                 }
                 
                 return hexTileType;
@@ -943,6 +939,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         update_command.ExecuteNonQuery();
                     }
+                    connection.Close();
                     return true;
                 }                
 
@@ -952,17 +949,18 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
 
 
-        private async static Task<bool> UpdateHasCastleAsync(long accountID, int hasCastle)
+        private async static Task<bool> UpdateHasCastleAsync(long accountID, int hasCastle, int x_pos, int y_pos)
         {
             Task<bool> task = Task.Run(() =>
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string update_query = String.Format("UPDATE accounts SET has_castle = {0} WHERE id = '{1}';", hasCastle, accountID);
+                    string update_query = String.Format("UPDATE accounts SET has_castle = {0}, castle_x = {2}, castle_y = {3} WHERE id = '{1}';", hasCastle, accountID, x_pos, y_pos);
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
                     }
+                    connection.Close();
                     return true;
                 }               
             });
@@ -1018,6 +1016,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                break;                            
                        }                       
                    }
+                   connection.Close();
                    return true;
                }               
            });
@@ -1074,6 +1073,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         }
                     }                 
                     return true;
+                    connection.Close();
                 }
             });
             return await task;
@@ -1144,6 +1144,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         update_command.ExecuteNonQuery();
                     }
+                    connection.Close();
                     return true;
                 }                
             });
@@ -1161,6 +1162,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         update_command.ExecuteNonQuery();
                     }
+                    connection.Close();
                     return true;
                 }
                
@@ -1187,7 +1189,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         update_command.ExecuteNonQuery();
                     }
-                    return true;
+                    connection.Close();
+                    return true;                    
                 }
             });
             return await task;
@@ -1198,54 +1201,52 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             Task<List<Data.HexTile>> task = Task.Run(async () =>
             {
-                using (MySqlConnection connection = GetMySqlConnection())
+               
+                Data.HexGrid hexGrid = await GetGridAsync(gameID);
+                List<Data.HexTile> neighbors = new List<Data.HexTile>();
+                Data.Vector2Int currentPosition;
+
+                Data.Vector2Int[] evenDirections =
                 {
-                    Data.HexGrid hexGrid = await GetGridAsync(gameID);
-                    List<Data.HexTile> neighbors = new List<Data.HexTile>();
-                    Data.Vector2Int currentPosition;
-
-                    Data.Vector2Int[] evenDirections =
-                    {
-                    new Data.Vector2Int(0, +1),
-                    new Data.Vector2Int(+1, +1),
-                    new Data.Vector2Int(+1, 0),
-                    new Data.Vector2Int(+1, -1),
-                    new Data.Vector2Int(0, -1),
-                    new Data.Vector2Int(-1, 0),
+                new Data.Vector2Int(0, +1),
+                new Data.Vector2Int(+1, +1),
+                new Data.Vector2Int(+1, 0),
+                new Data.Vector2Int(+1, -1),
+                new Data.Vector2Int(0, -1),
+                new Data.Vector2Int(-1, 0),
                 };
 
-                    Data.Vector2Int[] oddDirections =
-                    {
-                    new Data.Vector2Int(-1, +1),
-                    new Data.Vector2Int(0, +1),
-                    new Data.Vector2Int(+1, 0),
-                    new Data.Vector2Int(0, -1),
-                    new Data.Vector2Int(-1, -1),
-                    new Data.Vector2Int(-1, 0),
+                Data.Vector2Int[] oddDirections =
+                {
+                new Data.Vector2Int(-1, +1),
+                new Data.Vector2Int(0, +1),
+                new Data.Vector2Int(+1, 0),
+                new Data.Vector2Int(0, -1),
+                new Data.Vector2Int(-1, -1),
+                new Data.Vector2Int(-1, 0),
                 };
 
-                    var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
+                var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
 
-                    foreach (Data.Vector2Int direction in directions)
+                foreach (Data.Vector2Int direction in directions)
+                {
+                    currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
+                    currentPosition += direction;
+                    if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
                     {
-                        currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
-                        currentPosition += direction;
-                        if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
+                        Data.HexTile neighbor = new Data.HexTile();
+                        neighbor.x = currentPosition.x;
+                        neighbor.y = currentPosition.y;
+                        neighbor.hexType = await GetHexTileTypeAsync(gameID, currentPosition.x, currentPosition.y);
+
+                        if (neighbor != null)
                         {
-                            Data.HexTile neighbor = new Data.HexTile();
-                            neighbor.x = currentPosition.x;
-                            neighbor.y = currentPosition.y;
-                            neighbor.hexType = await GetHexTileTypeAsync(gameID, currentPosition.x, currentPosition.y);
-
-                            if (neighbor != null)
-                            {
-                                neighbors.Add(neighbor);
-                            }
+                            neighbors.Add(neighbor);
                         }
-
                     }
-                    return neighbors;
-                }                
+
+                }
+                return neighbors;                              
             });
             return await task;
         }
@@ -1255,92 +1256,154 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Task<List<Data.HexTile>> task = Task.Run(async () =>
             {
 
-                using (MySqlConnection connection = GetMySqlConnection())
+               
+                Data.HexGrid hexGrid = await GetGridAsync(gameID);
+                List<Data.HexTile> neighbors = new List<Data.HexTile>();
+                Data.Vector2Int currentPosition;
+
+                Data.Vector2Int[] evenDirections =
                 {
-                    Data.HexGrid hexGrid = await GetGridAsync(gameID);
-                    List<Data.HexTile> neighbors = new List<Data.HexTile>();
-                    Data.Vector2Int currentPosition;
-
-                    Data.Vector2Int[] evenDirections =
-                    {
-                    new Data.Vector2Int(0, +1),
-                    new Data.Vector2Int(+1, +1),
-                    new Data.Vector2Int(+1, 0),
-                    new Data.Vector2Int(+1, -1),
-                    new Data.Vector2Int(0, -1),
-                    new Data.Vector2Int(-1, 0),
-                    new Data.Vector2Int(0, +2),
-                    new Data.Vector2Int(+1, +2),
-                    new Data.Vector2Int(+2, +1),
-                    new Data.Vector2Int(+2, 0),
-                    new Data.Vector2Int(+2, -1),
-                    new Data.Vector2Int(+1, -2),
-                    new Data.Vector2Int(0, -2),
-                    new Data.Vector2Int(-1, -2),
-                    new Data.Vector2Int(-1, -1),
-                    new Data.Vector2Int(-2, 0),
-                    new Data.Vector2Int(-1, +1),
-                    new Data.Vector2Int(-1, +2),
+                new Data.Vector2Int(0, +1),
+                new Data.Vector2Int(+1, +1),
+                new Data.Vector2Int(+1, 0),
+                new Data.Vector2Int(+1, -1),
+                new Data.Vector2Int(0, -1),
+                new Data.Vector2Int(-1, 0),
+                new Data.Vector2Int(0, +2),
+                new Data.Vector2Int(+1, +2),
+                new Data.Vector2Int(+2, +1),
+                new Data.Vector2Int(+2, 0),
+                new Data.Vector2Int(+2, -1),
+                new Data.Vector2Int(+1, -2),
+                new Data.Vector2Int(0, -2),
+                new Data.Vector2Int(-1, -2),
+                new Data.Vector2Int(-1, -1),
+                new Data.Vector2Int(-2, 0),
+                new Data.Vector2Int(-1, +1),
+                new Data.Vector2Int(-1, +2),
                 };
 
-                    Data.Vector2Int[] oddDirections =
-                    {
-                    new Data.Vector2Int(-1, +1),
-                    new Data.Vector2Int(0, +1),
-                    new Data.Vector2Int(+1, 0),
-                    new Data.Vector2Int(0, -1),
-                    new Data.Vector2Int(-1, -1),
-                    new Data.Vector2Int(-1, 0),
-                    new Data.Vector2Int(0, +2),
-                    new Data.Vector2Int(+1, +2),
-                    new Data.Vector2Int(+1, +1),
-                    new Data.Vector2Int(2, 0),
-                    new Data.Vector2Int(+1, -1),
-                    new Data.Vector2Int(+1, -2),
-                    new Data.Vector2Int(0, -2),
-                    new Data.Vector2Int(-1, -2),
-                    new Data.Vector2Int(-2, -1),
-                    new Data.Vector2Int(-2, 0),
-                    new Data.Vector2Int(-2, +1),
-                    new Data.Vector2Int(-1, +2),
+                Data.Vector2Int[] oddDirections =
+                {
+                new Data.Vector2Int(-1, +1),
+                new Data.Vector2Int(0, +1),
+                new Data.Vector2Int(+1, 0),
+                new Data.Vector2Int(0, -1),
+                new Data.Vector2Int(-1, -1),
+                new Data.Vector2Int(-1, 0),
+                new Data.Vector2Int(0, +2),
+                new Data.Vector2Int(+1, +2),
+                new Data.Vector2Int(+1, +1),
+                new Data.Vector2Int(2, 0),
+                new Data.Vector2Int(+1, -1),
+                new Data.Vector2Int(+1, -2),
+                new Data.Vector2Int(0, -2),
+                new Data.Vector2Int(-1, -2),
+                new Data.Vector2Int(-2, -1),
+                new Data.Vector2Int(-2, 0),
+                new Data.Vector2Int(-2, +1),
+                new Data.Vector2Int(-1, +2),
                 };
 
-                    var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
+                var directions = centerTile.y % 2 != 0 ? evenDirections : oddDirections;
 
-                    foreach (Data.Vector2Int direction in directions)
+                foreach (Data.Vector2Int direction in directions)
+                {
+                    currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
+                    currentPosition += direction;
+                    if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
                     {
-                        currentPosition = new Data.Vector2Int(centerTile.x, centerTile.y);
-                        currentPosition += direction;
-                        if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
+                        Data.HexTile neighbor = new Data.HexTile();
+                        neighbor.x = currentPosition.x;
+                        neighbor.y = currentPosition.y;
+                        neighbor.hexType = await GetHexTileTypeAsync(gameID, currentPosition.x, currentPosition.y);
+
+                        if (neighbor != null)
                         {
-                            Data.HexTile neighbor = new Data.HexTile();
-                            neighbor.x = currentPosition.x;
-                            neighbor.y = currentPosition.y;
-                            neighbor.hexType = await GetHexTileTypeAsync(gameID, currentPosition.x, currentPosition.y);
-
-                            if (neighbor != null)
-                            {
-                                neighbors.Add(neighbor);
-                            }
+                            neighbors.Add(neighbor);
                         }
-
                     }
-                    return neighbors;
+
                 }
+                return neighbors;                
             });
             return await task;
         }
 
 
+
+        private async static Task<Data.Unit> GetUnitAsync(long unitDatabaseID)
+        {
+            Task<Data.Unit> task = Task.Run(async () =>
+            {
+                
+                Data.Unit unit = new Data.Unit();
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.game_id, units.trained, units.ready_player1, units.ready_player2, units.trained_time, units.army_camp_x, units.army_camp_y, units.current_x, units.current_y, units.target_x, units.target_y, units.is_player1_unit, units.path, server_units.health, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.id = '{0}';", unitDatabaseID);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {                                    
+                                    unit.id = (Data.UnitID)Enum.Parse(typeof(Data.UnitID), reader["global_id"].ToString());
+                                    long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                    int.TryParse(reader["level"].ToString(), out unit.level);
+                                    int.TryParse(reader["game_id"].ToString(), out unit.gameID);
+                                    int.TryParse(reader["health"].ToString(), out unit.health);
+                                    int.TryParse(reader["housing"].ToString(), out unit.housing);
+                                    int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
+                                    float.TryParse(reader["trained_time"].ToString(), out unit.trainedTime);
+                                    int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                    int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                    int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                    int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                    int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                    int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                    unit.serializedPath = reader["path"].ToString();
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["trained"].ToString(), out isTrue);
+                                    unit.trained = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["ready_player1"].ToString(), out isTrue);
+                                    unit.ready_player1 = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["ready_player2"].ToString(), out isTrue);
+                                    unit.ready_player2 = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                    unit.isPlayer1Unit = isTrue > 0;
+                                                                    
+                                }
+                            }
+                        }
+                    }
+                    connection.Close();
+                }
+               
+                return unit;
+            });
+            return await task;
+        }
+
         private async static Task<List<Data.Unit>> GetUnitsAsync(long accountID)
         {
-            Task<List<Data.Unit>> task = Task.Run(() =>
+            Task<List<Data.Unit>> task = Task.Run(async () =>
             {
+                Data.Player player = await GetPlayerDataAsync(accountID);
                 List<Data.Unit> data = new List<Data.Unit>();
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.trained, units.ready, units.trained_time, units.army_camp_x, units.army_camp_y, server_units.health, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.account_id = '{0}';", accountID);
+                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.game_id, units.trained, units.ready_player1, units.ready_player2, units.trained_time, units.army_camp_x, units.army_camp_y, units.current_x, units.current_y, units.target_x, units.target_y, units.path, units.is_player1_unit, server_units.health, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.game_id = '{0}';", player.gameID);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -1354,26 +1417,45 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     unit.id = (Data.UnitID)Enum.Parse(typeof(Data.UnitID), reader["global_id"].ToString());
                                     long.TryParse(reader["id"].ToString(), out unit.databaseID);
                                     int.TryParse(reader["level"].ToString(), out unit.level);
+                                    int.TryParse(reader["game_id"].ToString(), out unit.gameID);
                                     int.TryParse(reader["health"].ToString(), out unit.health);
                                     int.TryParse(reader["housing"].ToString(), out unit.housing);
                                     int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
                                     float.TryParse(reader["trained_time"].ToString(), out unit.trainedTime);
                                     int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
                                     int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                    int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                    int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                    int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                    int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                    unit.serializedPath = reader["path"].ToString();
+
+                                    //DEBUG
+                                    //Console.WriteLine("Path-ul uniatii venit din baza de date este: " + unit.path);
+
 
                                     int isTrue = 0;
                                     int.TryParse(reader["trained"].ToString(), out isTrue);
                                     unit.trained = isTrue > 0;
 
                                     isTrue = 0;
-                                    int.TryParse(reader["ready"].ToString(), out isTrue);
-                                    unit.ready = isTrue > 0;
+                                    int.TryParse(reader["ready_player1"].ToString(), out isTrue);
+                                    unit.ready_player1 = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["ready_player2"].ToString(), out isTrue);
+                                    unit.ready_player2 = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                    unit.isPlayer1Unit = isTrue > 0;                                    
 
                                     data.Add(unit);
                                 }
                             }
                         }
                     }
+                    connection.Close();
                 }
                 return data;
             });
@@ -1388,10 +1470,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
             Packet packet = new Packet();
             packet.Write((int)Terminal.RequestsID.TRAIN);                    
-            packet.Write(result);
-            packet.Write(unitGlobalID);
-            packet.Write(armyCamp_x);
-            packet.Write(armyCamp_y);
+            packet.Write(result);           
             Sender.TCP_Send(clientID, packet);
         }
 
@@ -1420,7 +1499,19 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             {
                                 await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold, player.stone, player.wood, player.food - unit.requiredFood, player.stoneProduction, player.woodProduction, player.foodProduction);
 
-                                string insertQuery = String.Format("INSERT INTO units (global_id, level, game_id, account_id, army_camp_x, army_camp_y) VALUES ('{0}', {1}, {2}, {3}, {4}, {5});", unitGlobalID, level, player.gameID, accountID, armyCamp_x, armyCamp_y);
+                                List<Data.HexTile> path = await FindPath(player.gameID, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y);
+                                string serializedPath = await Data.Serialize<List<Data.HexTile>>(path);
+                                
+                                string insertQuery;
+                                if(player.isPlayer1 == 1)
+                                {
+                                    insertQuery = String.Format("INSERT INTO units (global_id, level, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, path, is_player1_unit) VALUES ('{0}', {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, '{10}', {11});", unitGlobalID, level, player.gameID, accountID, armyCamp_x, armyCamp_y, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y, serializedPath, 1);
+                                }
+                                else
+                                {
+                                    insertQuery = String.Format("INSERT INTO units (global_id, level, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, path, is_player1_unit) VALUES ('{0}', {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, '{10}', {11});", unitGlobalID, level, player.gameID, accountID, armyCamp_x, armyCamp_y, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y, serializedPath, 0);
+                                }
+
                                 using (MySqlCommand insertCommand = new MySqlCommand(insertQuery, connection))
                                 {
                                     insertCommand.ExecuteNonQuery();
@@ -1431,6 +1522,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 {
                                     updateCommand.ExecuteNonQuery();
                                 }
+
+
 
                                 response = 3; //Train started
                             }
@@ -1445,7 +1538,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         }
                         
                     }
-
+                    connection.Close();
                 }
                 return response;
             });
@@ -1481,28 +1574,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         command.ExecuteNonQuery();
                         response = 1;
-                    }  
+                    }
+                    connection.Close();
                 }
                 return response;
             });
             return await task;
         }
-
-        //private static void GeneralUpdateUnitTraining(MySqlConnection connection, float deltaTime)
-        //{
-        //    string query = String.Format("UPDATE units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level SET trained = 1 AND ready = 1 WHERE units.trained_time >= server_units.train_time");
-        //    using (MySqlCommand command = new MySqlCommand(query, connection))
-        //    {
-        //        command.ExecuteNonQuery();
-        //    }
-
-        //    query = String.Format("UPDATE units AS t1 INNER JOIN (SELECT units.id FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level WHERE units.trained <= 0 AND units.trained_time < server_units.train_time GROUP BY units.account_id) t2 ON t1.id = t2.id SET trained_time = trained_time + {0}", deltaTime);
-        //    using (MySqlCommand command = new MySqlCommand(query, connection))
-        //    {
-        //        command.ExecuteNonQuery();
-        //    }           
-        //}
-
+      
 
 
         private async static void UpdateUnitTraining(double  deltaTime)
@@ -1516,7 +1595,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string query = String.Format("UPDATE units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level SET units.trained = 1, units.ready = 1 WHERE units.trained_time >= server_units.train_time");
+                    string query = String.Format("UPDATE units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level SET units.trained = 1 WHERE units.trained_time >= server_units.train_time");
                     using (MySqlCommand command = new MySqlCommand(query, connection))
                     {
                         command.ExecuteNonQuery();
@@ -1527,11 +1606,92 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         command.ExecuteNonQuery();
                     }
+                    connection.Close();
                 }
                 return true;
             });
             return await task;
         }
+     
+
+        private async static void UpdateUnitsCoords()
+        {
+            await UpdateUnitsCoordsAsync();            
+        }
+
+        private async static Task<bool> UpdateUnitsCoordsAsync()
+        {
+            Task<bool> task = Task.Run(() =>
+            {                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string query = String.Format("UPDATE units SET current_x = target_x, current_y = target_y WHERE ready_player1 = 1 AND ready_player2 = 1;");
+                    using (MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                }                
+                return true;
+            });
+            return await task;
+        }
+       
+
+        public async static void UpdateUnitReady(int clientID, long unitDatabaseID, int grid_x, int grid_y, int isPlayer1)
+        {
+            int result = await UpdateUnitReadyAsync(unitDatabaseID, grid_x, grid_y, isPlayer1);
+
+            Packet packet = new Packet();
+            packet.Write((int)Terminal.RequestsID.UNIT_READY);
+            packet.Write(result);
+            Sender.TCP_Send(clientID, packet);
+        }
+
+        private async static Task<int> UpdateUnitReadyAsync(long unitDatabaseID, int grid_x, int grid_y, int isPlayer1)
+        {
+            Task<int> task = Task.Run(async () =>
+            {                
+                int result = 0;
+                Data.Unit unit = await GetUnitAsync(unitDatabaseID);
+
+                if (grid_x == unit.target_x && grid_y == unit.target_y)
+                {
+                    if(isPlayer1 == 1)
+                    {
+                        using (MySqlConnection connection = GetMySqlConnection())
+                        {
+                            string query = String.Format("UPDATE units SET ready_player1 = 1 WHERE id = {0};", unitDatabaseID);
+                            using (MySqlCommand updateCommand = new MySqlCommand(query, connection))
+                            {
+                                updateCommand.ExecuteNonQuery();
+                            }
+                            result = 2; //Unit is ready
+                            connection.Close();
+                        }
+                    }
+                    else
+                    {
+                        using (MySqlConnection connection = GetMySqlConnection())
+                        {
+                            string query = String.Format("UPDATE units SET ready_player2 = 1 WHERE id = {0};", unitDatabaseID);
+                            using (MySqlCommand updateCommand = new MySqlCommand(query, connection))
+                            {
+                                updateCommand.ExecuteNonQuery();
+                            }
+                            result = 2; //Unit is ready
+                            connection.Close();
+                        }
+                    }                    
+                }
+                else
+                {
+                    result = 1; // Unit is not at target coords
+                }                
+                return result;
+            });
+            return await task;
+        }        
 
 
         public async static void StartSearching(int clientID)
@@ -1557,7 +1717,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         update_command.ExecuteNonQuery();
                         result = 1;
-                    }                    
+                    }
+                    connection.Close();
                 }
                 return result;
             });
@@ -1588,6 +1749,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         update_command.ExecuteNonQuery();
                         result = 1;
                     }
+                    connection.Close();
                 }
                 return result;
             });
@@ -1629,7 +1791,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         long gameID;
                         Random random = new Random();
-                        int account1_index = random.Next(accounts.Count); ;
+                        int account1_index = random.Next(accounts.Count);
                         int account2_index = random.Next(accounts.Count);
 
                         if( account1_index == account2_index)
@@ -1663,12 +1825,129 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                         await GenerateGridAsync(gameID);
                     }
+                    connection.Close();
                 }
                 return true;
             });
             return await task;
         }
-       
+
+
+        private async static Task<List<Data.HexTile>> FindPath(long gameID, int startTile_x, int startTile_y, int targetTile_x, int targetTile_y)
+        {
+            Task<List<Data.HexTile>> task = Task.Run(async () =>
+            {                
+                Data.HexGrid hexGrid = await GetGridAsync(gameID);
+
+                Data.PathNode[,] pathGrid = new Data.PathNode[hexGrid.rows, hexGrid.columns];                
+
+                foreach(Data.HexTile hexTile in hexGrid.hexTiles)
+                {
+                    Data.PathNode pathNode = new Data.PathNode(hexTile);
+                    pathGrid[hexTile.x, hexTile.y] = pathNode;                    
+                }
+
+                Data.PathNode startNode = pathGrid[startTile_x, startTile_y];
+                Data.PathNode targetNode = pathGrid[targetTile_x, targetTile_y];
+
+                List<Data.PathNode> openSet = new List<Data.PathNode>();
+                HashSet<Data.PathNode> closedSet = new HashSet<Data.PathNode>();
+                openSet.Add(startNode);
+
+                while (openSet.Count > 0)
+                {
+                    Data.PathNode currentNode = openSet[0];
+                    for (int i = 1; i < openSet.Count; i++)
+                    {
+                        if (openSet[i].FCost < currentNode.FCost || (openSet[i].FCost == currentNode.FCost && openSet[i].hCost < currentNode.hCost))
+                        {
+                            currentNode = openSet[i];
+                        }
+                    }
+
+                    openSet.Remove(currentNode);
+                    closedSet.Add(currentNode);
+
+                    if (currentNode == targetNode)
+                    {
+                        return RetracePath(startNode, targetNode);
+                    }
+
+                    foreach (Data.PathNode neighbor in GetPathNeighbors(pathGrid, currentNode, hexGrid.rows, hexGrid.columns))
+                    {
+                        if (!neighbor.IsWalkable() || closedSet.Contains(neighbor))
+                        {
+                            continue;
+                        }
+
+                        int newCostToNeighbor = currentNode.gCost + GetDistance(currentNode, neighbor);
+                        if (newCostToNeighbor < neighbor.gCost || !openSet.Contains(neighbor))
+                        {
+                            neighbor.gCost = newCostToNeighbor;
+                            neighbor.hCost = GetDistance(neighbor, targetNode);
+                            neighbor.cameFromNode = currentNode;
+
+                            if (!openSet.Contains(neighbor))
+                            {
+                                openSet.Add(neighbor);
+                            }
+                        }
+                    }
+                }
+
+                return new List<Data.HexTile>(); // Return an empty path if no path is found
+            });
+            return await task;
+        }
+
+        private static List<Data.PathNode> GetPathNeighbors(Data.PathNode[,] pathGrid, Data.PathNode node, int height, int width)
+        {
+            List<Data.PathNode> neighbors = new List<Data.PathNode>();
+            int x = node.tile.x;
+            int y = node.tile.y;
+            Data.Vector2Int[] directions = y % 2 != 0 ? new Data.Vector2Int[]
+            {
+            new Data.Vector2Int(0, +1), new Data.Vector2Int(+1, +1), new Data.Vector2Int(+1, 0),
+            new Data.Vector2Int(+1, -1), new Data.Vector2Int(0, -1), new Data.Vector2Int(-1, 0)
+            } :
+            new Data.Vector2Int[]
+            {
+            new Data.Vector2Int(-1, +1), new Data.Vector2Int(0, +1), new Data.Vector2Int(+1, 0),
+            new Data.Vector2Int(0,-1), new Data.Vector2Int(-1, -1), new Data.Vector2Int(-1, 0),
+            };
+
+            foreach (var direction in directions)
+            {
+                int nx = x + direction.x;
+                int ny = y + direction.y;
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height)
+                {
+                    neighbors.Add(pathGrid[nx, ny]);
+                }
+            }
+            return neighbors;
+        }
+
+        private static int GetDistance(Data.PathNode nodeA, Data.PathNode nodeB)
+        {
+            int dx = Math.Abs(nodeA.tile.x - nodeB.tile.x);
+            int dy = Math.Abs(nodeA.tile.y - nodeB.tile.y);
+            return dy + Math.Max(0, (dx - dy) / 2);
+        }
+
+        private static List<Data.HexTile> RetracePath(Data.PathNode startNode, Data.PathNode endNode)
+        {
+            List<Data.HexTile> path = new List<Data.HexTile>();
+            Data.PathNode currentNode = endNode;
+
+            while (currentNode != startNode)
+            {
+                path.Add(currentNode.tile);
+                currentNode = currentNode.cameFromNode;
+            }
+            path.Reverse();
+            return path;
+        }
 
         #endregion
     }
