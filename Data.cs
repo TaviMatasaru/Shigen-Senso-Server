@@ -60,7 +60,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
         public class HexTile
-        {      
+        {
             public int hexType = 0;
             public int level = 1;
             public int x;
@@ -69,7 +69,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int requiredGold = 0;
             public int requiredStone = 0;
             public int requiredWood = 0;
-      
+
             public int stonePerSecond = 0;
             public int woodPerSecond = 0;
             public int foodPerSecond = 0;
@@ -77,6 +77,13 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int health = 0;
 
             public int capacity = 0;
+
+            public int attack = 0;
+            public int defense = 0;
+
+            public bool isAttacking = false;
+            public bool isDefending = false;
+            public bool isUnderAttack = false;
         }
 
         public class HexGrid
@@ -103,6 +110,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public bool ready_player1 = false;
             public bool ready_player2 = false;
             public int health = 0;
+            public int damage = 0;
+            public int def_damage = 0;
             public int trainTime = 0;
             public float trainedTime = 0;
             public int armyCamp_x = 0;
@@ -112,8 +121,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int target_x = 0;
             public int target_y = 0;
             public bool isPlayer1Unit = true;
+            public bool isDefending = true;
 
-            public string serializedPath = "test";
+            public string serializedPath;
             
         }
 
@@ -124,6 +134,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int requiredFood = 0;
             public int housing = 1;
             public int health = 0;
+            public int damage = 0;
+            public int def_damage = 0;
             public int trainTime = 0;
         }
 

@@ -45,7 +45,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             CANCEL_TRAIN = 11,
             SEARCH = 12,
             CANCEL_SEARCH = 13,            
-            UNIT_READY = 14,            
+            UNIT_READY = 14,
+            LAUNCH_ATTACK = 15,
         }
 
         public enum HexType
@@ -152,6 +153,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     int grid_y = packet.ReadInt();
                     int isPlayer1 = packet.ReadInt();
                     Database.UpdateUnitReady(clientID, readyUnitDatabaseID, grid_x, grid_y, isPlayer1);
+                    break;
+
+                case RequestsID.LAUNCH_ATTACK:
+                    int attackingUnitsCount = packet.ReadInt();
+                    int attackingArmyCamp_x = packet.ReadInt();
+                    int attackingArmyCamp_y = packet.ReadInt();
+                    int defendingArmyCamp_x = packet.ReadInt();
+                    int defenndingArmyCamp_y = packet.ReadInt();
+                    Database.LaunchAttack(clientID, attackingUnitsCount, attackingArmyCamp_x, attackingArmyCamp_y, defendingArmyCamp_x, defenndingArmyCamp_y);
                     break;
 
             }      
