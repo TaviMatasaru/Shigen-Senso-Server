@@ -61,6 +61,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         public class HexTile
         {
+            public long gameID = 0;
+            public long accountID = -1;
+            public long attackerAccountID = -1;
             public int hexType = 0;
             public int level = 1;
             public int x;
@@ -103,6 +106,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             public UnitID id = UnitID.barbarian;
             public int gameID = 0;
+            public long accountID = -1;
             public int level = 0;
             public long databaseID = 0;
             public int housing = 1;

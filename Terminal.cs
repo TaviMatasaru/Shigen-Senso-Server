@@ -72,7 +72,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             PLAYER2_STONE_MINE = 18,
             PLAYER2_SAWMILL = 19,
             PLAYER2_FARM = 20,
-            PLAYER2_ARMY_CAMP = 21
+            PLAYER2_ARMY_CAMP = 21,
+            PLAYER1_ARMY_CAMP_UNDER_ATTACK = 22,
+            PLAYER2_ARMY_CAMP_UNDER_ATTACK = 23
         }
 
         public static void ReceivedPacket(int clientID, Packet packet)

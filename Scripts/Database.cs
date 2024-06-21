@@ -66,13 +66,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             double deltaTime = (DateTime.Now - collectTime).TotalSeconds;
 
-            if((DateTime.Now - collectTime).TotalSeconds >= 1)
+            if((DateTime.Now - collectTime).TotalSeconds >= 0.6f)
             {
                 collectTime = DateTime.Now;
                 CollectResources();
                 UpdateUnitTraining(deltaTime);
                 UpdateUnitsCoords();
                 GameMaker();
+                BattleManager();
             }
         }
 
@@ -85,7 +86,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             string authData = await Data.Serialize<Data.InitializationData>(auth);
 
             await UpdateHasCastleAsync(auth.accountID, 0, 0, 0);
-            await UpdatePlayerResourcesAsync(auth.accountID, 10, 100, 3000, 3000, 3000, 0, 0, 0);
+            await UpdatePlayerResourcesAsync(auth.accountID, 10, 100, 3000, 3000, 3000);
 
             Packet packet = new Packet();
 
@@ -248,13 +249,13 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                             if(player.isPlayer1 == 1)
                             {
-                                await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER1_CASTLE);
-                                await UpdateCastleNeighboursAsync(player.gameID, player.isPlayer1, castleTile);
+                                await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER1_CASTLE);
+                                await UpdateCastleNeighboursAsync(player.gameID, accountID, player.isPlayer1, castleTile);
                             }
                             else
                             {
-                                await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER2_CASTLE);
-                                await UpdateCastleNeighboursAsync(player.gameID, player.isPlayer1, castleTile);
+                                await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER2_CASTLE);
+                                await UpdateCastleNeighboursAsync(player.gameID, accountID, player.isPlayer1, castleTile);
                             }
                             
                             result = 1;
@@ -295,9 +296,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                     if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                     {
-                        await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER1_STONE_MINE);
+                        await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER1_STONE_MINE);
 
-                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, stoneMineTile);
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, accountID, stoneMineTile);
 
                         int stonePerSecond = 0;
                         foreach (Data.HexTile neighbour in neighbours)
@@ -307,8 +308,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 stonePerSecond += serverBuilding.stonePerSecond;
                             }
                         }
-                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction + stonePerSecond, player.woodProduction, player.foodProduction);
+                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
                         await UpdateBuildingProductionAsync(player.gameID, stonePerSecond, 0, 0, x_pos, y_pos);
+                        await UpdatePlayerStoneProductionAsync(accountID, stonePerSecond);
 
                         result = 1;
                     }
@@ -328,9 +330,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                     if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                     {
-                        await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER2_STONE_MINE);
+                        await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER2_STONE_MINE);
 
-                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, stoneMineTile);
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, accountID, stoneMineTile);
 
                         int stonePerSecond = 0;
                         foreach (Data.HexTile neighbour in neighbours)
@@ -340,8 +342,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 stonePerSecond += serverBuilding.stonePerSecond;
                             }
                         }
-                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction + stonePerSecond, player.woodProduction, player.foodProduction);
+                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
                         await UpdateBuildingProductionAsync(player.gameID, stonePerSecond, 0, 0, x_pos, y_pos);
+                        await UpdatePlayerStoneProductionAsync(accountID, stonePerSecond);
 
                         result = 1;
                     }
@@ -383,9 +386,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                     if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                     {
-                        await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER1_SAWMILL);
+                        await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER1_SAWMILL);
 
-                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, sawmillTile);
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, accountID, sawmillTile);
 
                         int woodPerSecond = 0;
                         foreach (Data.HexTile neighbour in neighbours)
@@ -395,8 +398,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 woodPerSecond += serverBuilding.woodPerSecond;
                             }
                         }
-                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction + woodPerSecond, player.foodProduction);
+                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
                         await UpdateBuildingProductionAsync(player.gameID, 0, woodPerSecond, 0, x_pos, y_pos);
+                        await UpdatePlayerWoodProductionAsync(accountID, woodPerSecond);
 
                         result = 1;
                     }
@@ -415,9 +419,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                     if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                     {
-                        await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER2_SAWMILL);
+                        await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER2_SAWMILL);
 
-                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, sawmillTile);
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, accountID, sawmillTile);
 
                         int woodPerSecond = 0;
                         foreach (Data.HexTile neighbour in neighbours)
@@ -427,8 +431,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 woodPerSecond += serverBuilding.woodPerSecond;
                             }
                         }
-                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction + woodPerSecond, player.foodProduction);
+                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
                         await UpdateBuildingProductionAsync(player.gameID, 0, woodPerSecond, 0, x_pos, y_pos);
+                        await UpdatePlayerWoodProductionAsync(accountID, woodPerSecond);
 
                         result = 1;
                     }
@@ -469,9 +474,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                     if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                     {
-                        await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER1_FARM);
+                        await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER1_FARM);
 
-                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, farmTile);
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, accountID, farmTile);
 
                         int foodPerSecond = 0;
                         foreach (Data.HexTile neighbour in neighbours)
@@ -481,8 +486,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 foodPerSecond += serverBuilding.foodPerSecond;
                             }
                         }
-                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction + foodPerSecond);
+                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
                         await UpdateBuildingProductionAsync(player.gameID, 0, 0, foodPerSecond, x_pos, y_pos);
+                        await UpdatePlayerFoodProductionAsync(accountID, foodPerSecond);
 
                         result = 1;
                     }
@@ -500,9 +506,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                     if (player.gold >= serverBuilding.requiredGold && player.stone >= serverBuilding.requiredStone && player.wood >= serverBuilding.requiredWood)
                     {
-                        await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER2_FARM);
+                        await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER2_FARM);
 
-                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, farmTile);
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(player.gameID, accountID, farmTile);
 
                         int foodPerSecond = 0;
                         foreach (Data.HexTile neighbour in neighbours)
@@ -512,8 +518,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 foodPerSecond += serverBuilding.foodPerSecond;
                             }
                         }
-                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction + foodPerSecond);
+                        await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
                         await UpdateBuildingProductionAsync(player.gameID, 0, 0, foodPerSecond, x_pos, y_pos);
+                        await UpdatePlayerFoodProductionAsync(accountID, foodPerSecond);
 
                         result = 1;
                     }
@@ -597,14 +604,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             {
                                 if (player.isPlayer1 == 1)
                                 {
-                                    await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER1_ARMY_CAMP);
+                                    await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER1_ARMY_CAMP);
                                 }
                                 else
                                 {
-                                    await UpdateHexTileTypeAsync(player.gameID, x_pos, y_pos, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                                    await UpdateHexTileTypeAsync(player.gameID, accountID, x_pos, y_pos, Terminal.HexType.PLAYER2_ARMY_CAMP);
                                 }
-                                await UpdateArmyCampNeighboursAsync(player.gameID, player.isPlayer1, armyCampTile);
-                                await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food, player.stoneProduction, player.woodProduction, player.foodProduction);
+                                await UpdateArmyCampNeighboursAsync(player.gameID, accountID, player.isPlayer1, armyCampTile);
+                                await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold - serverBuilding.requiredGold, player.stone - serverBuilding.requiredStone, player.wood - serverBuilding.requiredWood, player.food);
+                                await UpdateBuildingsAndPlayerProduction(accountID);
                                 result = 3;
                             }
                         }                                              
@@ -672,7 +680,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT x, y, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack FROM hex_grid WHERE game_id = {0} AND x = {1} AND y = {2};", gameID, x, y);
+                    string select_query = String.Format("SELECT x, y, account_id, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack, attacker_account_id FROM hex_grid WHERE game_id = {0} AND x = {1} AND y = {2};", gameID, x, y);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -680,7 +688,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             if (reader.HasRows)
                             {
                                 while (reader.Read())
-                                {                                    
+                                {
+                                    data.gameID = gameID;
+                                    data.accountID = long.Parse(reader["account_id"].ToString());
+                                    data.attackerAccountID = long.Parse(reader["attacker_account_id"].ToString());
                                     data.x = int.Parse(reader["x"].ToString());
                                     data.y = int.Parse(reader["y"].ToString());
                                     data.health = int.Parse(reader["health"].ToString());
@@ -838,7 +849,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT x, y, hex_type, stone_per_second, wood_per_second, food_per_second, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack FROM hex_grid WHERE game_id = {0};", gameID);
+                    string select_query = String.Format("SELECT game_id, x, y, hex_type, stone_per_second, wood_per_second, food_per_second, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack FROM hex_grid WHERE game_id = {0};", gameID);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -848,7 +859,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 while (reader.Read())
                                 {
                                     Data.HexTile tile = new Data.HexTile();
-
+                                    tile.gameID = long.Parse(reader["game_id"].ToString());
                                     tile.x = int.Parse(reader["x"].ToString());
                                     tile.y = int.Parse(reader["y"].ToString());
                                     tile.hexType = int.Parse(reader["hex_type"].ToString());
@@ -962,16 +973,72 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        private async static Task<bool> UpdateHexTileTypeAsync(long gameID, int x_pos, int y_pos, Terminal.HexType hexTileType)
+        private async static Task<Data.HexTile> GetHexTileAsync(long gameID, long accountID, int x_pos, int y_pos)
         {
-            Task<bool> task = Task.Run(() =>
+            Task<Data.HexTile> task = Task.Run(() =>
+            {
+                Data.HexTile tile = new Data.HexTile();
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT game_id, account_id, x, y, hex_type, stone_per_second, wood_per_second, food_per_second,  health, capacity, attack, defense, is_attacking, is_defending, is_under_attack FROM hex_grid WHERE account_id = {0} AND game_id = {1} AND x = {2} AND y = {3};", accountID, gameID, x_pos, y_pos);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {                                    
+                                    tile.gameID = long.Parse(reader["game_id"].ToString());
+                                    tile.accountID = long.Parse(reader["account_id"].ToString());
+                                    tile.x = int.Parse(reader["x"].ToString());
+                                    tile.y = int.Parse(reader["y"].ToString());
+                                    tile.hexType = int.Parse(reader["hex_type"].ToString());
+                                    tile.stonePerSecond = int.Parse(reader["stone_per_second"].ToString());
+                                    tile.woodPerSecond = int.Parse(reader["wood_per_second"].ToString());
+                                    tile.foodPerSecond = int.Parse(reader["food_per_second"].ToString());
+                                    tile.health = int.Parse(reader["health"].ToString());
+                                    tile.capacity = int.Parse(reader["capacity"].ToString());
+                                    tile.attack = int.Parse(reader["attack"].ToString());
+                                    tile.defense = int.Parse(reader["defense"].ToString());
+
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["is_attacking"].ToString(), out isTrue);
+                                    tile.isAttacking = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                    tile.isDefending = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_under_attack"].ToString(), out isTrue);
+                                    tile.isUnderAttack = isTrue > 0;
+                                   
+                                }
+                            }
+                        }
+                    }
+                    connection.Close();
+                }              
+    
+                return tile;
+            });
+            return await task;
+        }
+
+
+        private async static Task<bool> UpdateHexTileTypeAsync(long gameID, long accountID, int x_pos, int y_pos, Terminal.HexType hexTileType)
+        {
+            Task<bool> task = Task.Run( () =>
             {
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
                     int hexType = (int)hexTileType;
 
-                    string update_query = String.Format("UPDATE hex_grid SET hex_type = {0} WHERE game_id = {1} AND x = {2} AND y = {3};", hexType, gameID, x_pos, y_pos);
+                    string update_query = String.Format("UPDATE hex_grid SET hex_type = {0}, account_id = {1} WHERE game_id = {2} AND x = {3} AND y = {4};", hexType, accountID, gameID, x_pos, y_pos);
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
@@ -983,6 +1050,90 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }
+
+        private async static Task<bool> UpdateHexTileIsAttackingAsync(long gameID, long accountID, int x_pos, int y_pos, bool isAttacking)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    int is_attacking = 0;
+                    if(isAttacking == true)
+                    {
+                        is_attacking = 1;
+                    }
+                    
+
+                    string update_query = String.Format("UPDATE hex_grid SET is_attacking = {0} WHERE game_id = {1} AND x = {2} AND y = {3};", is_attacking, gameID, x_pos, y_pos);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdateHexTileIsDefendingAsync(long gameID, long accountID, int x_pos, int y_pos, bool isDefending)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    int is_defending = 0;
+                    if (isDefending == true)
+                    {
+                        is_defending = 1;
+                    }
+
+
+                    string update_query = String.Format("UPDATE hex_grid SET is_defending = {0} WHERE game_id = {1} AND x = {2} AND y = {3};", is_defending, gameID, x_pos, y_pos);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdateHexTileIsUnderAttackAsync(long gameID, long accountID, int x_pos, int y_pos, bool isUnderAttack)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    int is_under_attack = 0;
+                    if (isUnderAttack == true)
+                    {
+                        is_under_attack = 1;
+                    }
+
+
+                    string update_query = String.Format("UPDATE hex_grid SET is_under_attack = {0} WHERE game_id = {1} AND x = {2} AND y = {3};", is_under_attack, gameID, x_pos, y_pos);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+
+            });
+            return await task;
+        }
+
+
+
 
 
 
@@ -1004,7 +1155,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        private static async Task<bool> UpdateCastleNeighboursAsync(long gameID, int isPlayer1, Data.HexTile castleTile)
+        private static async Task<bool> UpdateCastleNeighboursAsync(long gameID, long accountID, int isPlayer1, Data.HexTile castleTile)
         {
             Task<bool> task = Task.Run(async () =>
            {
@@ -1020,16 +1171,16 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                switch (neighbour.hexType)
                                {
                                    case (int)Terminal.HexType.FREE_LAND:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_LAND);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_LAND);
                                        break;
                                    case (int)Terminal.HexType.FREE_MOUNTAIN:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_MOUNTAIN);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_MOUNTAIN);
                                        break;
                                    case (int)Terminal.HexType.FREE_FOREST:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_FOREST);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_FOREST);
                                        break;
                                    case (int)Terminal.HexType.FREE_CROPS:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_CROPS);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_CROPS);
                                        break;
                                }
                                break;
@@ -1038,16 +1189,16 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                switch (neighbour.hexType)
                                {
                                    case (int)Terminal.HexType.FREE_LAND:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_LAND);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_LAND);
                                        break;
                                    case (int)Terminal.HexType.FREE_MOUNTAIN:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_MOUNTAIN);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_MOUNTAIN);
                                        break;
                                    case (int)Terminal.HexType.FREE_FOREST:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_FOREST);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_FOREST);
                                        break;
                                    case (int)Terminal.HexType.FREE_CROPS:
-                                       await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_CROPS);
+                                       await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_CROPS);
                                        break;
                                }
                                break;                            
@@ -1060,7 +1211,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        private static async Task<bool> UpdateArmyCampNeighboursAsync(long gameID, int isPlayer1, Data.HexTile castleTile)
+        private static async Task<bool> UpdateArmyCampNeighboursAsync(long gameID, long accountID, int isPlayer1, Data.HexTile castleTile)
         {
             Task<bool> task = Task.Run(async () =>
             {
@@ -1076,16 +1227,35 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 switch (neighbour.hexType)
                                 {
                                     case (int)Terminal.HexType.FREE_LAND:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_LAND);
+                                    case (int)Terminal.HexType.PLAYER2_LAND:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_LAND);
                                         break;
+
                                     case (int)Terminal.HexType.FREE_MOUNTAIN:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_MOUNTAIN);
+                                    case (int)Terminal.HexType.PLAYER2_MOUNTAIN:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_MOUNTAIN);
                                         break;
+
                                     case (int)Terminal.HexType.FREE_FOREST:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_FOREST);
+                                    case (int)Terminal.HexType.PLAYER2_FOREST:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_FOREST);
                                         break;
+
                                     case (int)Terminal.HexType.FREE_CROPS:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_CROPS);
+                                    case (int)Terminal.HexType.PLAYER2_CROPS:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_CROPS);
+                                        break;
+
+                                    case (int)Terminal.HexType.PLAYER2_STONE_MINE:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_STONE_MINE);
+                                        break;
+
+                                    case (int)Terminal.HexType.PLAYER2_SAWMILL:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_SAWMILL);
+                                        break;
+
+                                    case (int)Terminal.HexType.PLAYER2_FARM:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER1_FARM);
                                         break;
                                 }
                                 break;
@@ -1094,21 +1264,40 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 switch (neighbour.hexType)
                                 {
                                     case (int)Terminal.HexType.FREE_LAND:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_LAND);
+                                    case (int)Terminal.HexType.PLAYER1_LAND:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_LAND);
                                         break;
+
                                     case (int)Terminal.HexType.FREE_MOUNTAIN:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_MOUNTAIN);
+                                    case (int)Terminal.HexType.PLAYER1_MOUNTAIN:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_MOUNTAIN);
                                         break;
+
                                     case (int)Terminal.HexType.FREE_FOREST:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_FOREST);
+                                    case (int)Terminal.HexType.PLAYER1_FOREST:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_FOREST);
                                         break;
+
                                     case (int)Terminal.HexType.FREE_CROPS:
-                                        await UpdateHexTileTypeAsync(gameID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_CROPS);
+                                    case (int)Terminal.HexType.PLAYER1_CROPS:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_CROPS);
+                                        break;
+
+                                    case (int)Terminal.HexType.PLAYER1_STONE_MINE:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_STONE_MINE);
+                                        break;
+
+                                    case (int)Terminal.HexType.PLAYER1_SAWMILL:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_SAWMILL);
+                                        break;
+
+                                    case (int)Terminal.HexType.PLAYER1_FARM:
+                                        await UpdateHexTileTypeAsync(gameID, accountID, neighbour.x, neighbour.y, Terminal.HexType.PLAYER2_FARM);
                                         break;
                                 }
                                 break;
                         }
-                    }                 
+                    }                     
                     return true;
                     connection.Close();
                 }
@@ -1116,7 +1305,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        private static async Task<List<Data.HexTile>> GetNeighboursAsync(long gameID, Data.HexTile centerTile)
+        private static async Task<List<Data.HexTile>> GetNeighboursAsync(long gameID, long accountID, Data.HexTile centerTile)
         {
             Task<List<Data.HexTile>> task = Task.Run(async () =>
             {
@@ -1153,14 +1342,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     currentPosition += direction;
                     if (currentPosition.x >= 0 && currentPosition.x < hexGrid.columns && currentPosition.y >= 0 && currentPosition.y < hexGrid.rows)
                     {
-                        Data.HexTile neighbor = new Data.HexTile();
-                        neighbor.x = currentPosition.x;
-                        neighbor.y = currentPosition.y;
-                        neighbor.hexType = await GetHexTileTypeAsync(gameID, currentPosition.x, currentPosition.y);
 
-                        if (neighbor != null)
+                        Data.HexTile neighbour = await GetHexTileAsync(gameID, accountID, currentPosition.x, currentPosition.y);
+
+                        if (neighbour != null)
                         {
-                            neighbors.Add(neighbor);
+                            neighbors.Add(neighbour);
                         }
                     }
 
@@ -1303,13 +1490,13 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
 
 
-        private async static Task<bool> UpdatePlayerResourcesAsync(long accountID, int gems, int gold, int stone, int wood, int food, int stoneProduction, int woodProduction, int foodProduction)
+        private async static Task<bool> UpdatePlayerResourcesAsync(long accountID, int gems, int gold, int stone, int wood, int food)
         {
             Task<bool> task = Task.Run(() =>
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string update_query = String.Format("UPDATE accounts SET gems = {0}, gold = {1}, stone = {2}, wood = {3}, food = {4}, stone_production = {5}, wood_production = {6}, food_production = {7}  WHERE id = '{8}';", gems, gold, stone, wood, food, stoneProduction, woodProduction, foodProduction, accountID);
+                    string update_query = String.Format("UPDATE accounts SET gems = {0}, gold = {1}, stone = {2}, wood = {3}, food = {4} WHERE id = {5};", gems, gold, stone, wood, food, accountID);
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
@@ -1320,6 +1507,79 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }
+
+        private async static Task<bool> UpdatePlayerProductionAsync(long accountID, int stoneProduction, int woodProduction, int foodProduction)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE accounts SET stone_production = {0}, wood_production = {1}, food_production = {2}  WHERE id = {3};", stoneProduction, woodProduction, foodProduction, accountID);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdatePlayerStoneProductionAsync(long accountID, int stoneProduction)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE accounts SET stone_production = stone_production + {0} WHERE id = {1};", stoneProduction, accountID);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdatePlayerWoodProductionAsync(long accountID, int woodProduction)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE accounts SET wood_production = wood_production + {0} WHERE id = {1};", woodProduction, accountID);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdatePlayerFoodProductionAsync(long accountID, int foodProduction)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string update_query = String.Format("UPDATE accounts SET food_production = food_production + {0} WHERE id = {1};", foodProduction, accountID);
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                    return true;
+                }
+            });
+            return await task;
+        }
+
 
         private async static Task<bool> UpdateBuildingProductionAsync(long gameID, int stone_per_second, int wood_per_second, int food_per_second, int x_pos, int y_pos)
         {
@@ -1335,12 +1595,144 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     connection.Close();
                     return true;
                 }
-               
+
 
             });
             return await task;
         }
 
+        private async static Task<bool> UpdateBuildingsAndPlayerProduction(long accountID)
+        {
+            Task<bool> task = Task.Run(async () =>
+            {              
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    Data.ServerBuilding stoneMine = await GetServerBuildingAsync("stone_mine", 1);
+                    Data.ServerBuilding sawmill = await GetServerBuildingAsync("sawmill", 1);
+                    Data.ServerBuilding farm = await GetServerBuildingAsync("farm", 1);
+
+
+                    List<Data.HexTile> playerBuildings = new List<Data.HexTile>();
+
+                    string select_query = String.Format("SELECT game_id, account_id, x, y, hex_type, stone_per_second, wood_per_second, food_per_second,  health, capacity, attack, defense, is_attacking, is_defending, is_under_attack FROM hex_grid WHERE account_id = {0} AND (hex_type = 9 OR hex_type = 10 OR hex_type = 11 OR hex_type = 18 OR  hex_type = 19 OR hex_type = 20);", accountID);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    Data.HexTile tile = new Data.HexTile();
+
+                                    tile.gameID = long.Parse(reader["game_id"].ToString());
+                                    tile.accountID = long.Parse(reader["account_id"].ToString());
+                                    tile.x = int.Parse(reader["x"].ToString());
+                                    tile.y = int.Parse(reader["y"].ToString());
+                                    tile.hexType = int.Parse(reader["hex_type"].ToString());
+                                    tile.stonePerSecond = int.Parse(reader["stone_per_second"].ToString());
+                                    tile.woodPerSecond = int.Parse(reader["wood_per_second"].ToString());
+                                    tile.foodPerSecond = int.Parse(reader["food_per_second"].ToString());
+                                    tile.health = int.Parse(reader["health"].ToString());
+                                    tile.capacity = int.Parse(reader["capacity"].ToString());
+                                    tile.attack = int.Parse(reader["attack"].ToString());
+                                    tile.defense = int.Parse(reader["defense"].ToString());
+
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["is_attacking"].ToString(), out isTrue);
+                                    tile.isAttacking = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                    tile.isDefending = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_under_attack"].ToString(), out isTrue);
+                                    tile.isUnderAttack = isTrue > 0;
+
+
+                                    playerBuildings.Add(tile);
+                                }
+                            }
+                        }
+                    }
+
+                    //***********DEBUG**********
+                    Console.WriteLine("Am selectat toate constructiile de pe harta. Sunt in numar de: " + playerBuildings.Count);
+
+
+                    int playerStoneProduction = 0;
+                    int playerWoodProduction = 0;
+                    int playerFoodProduction = 0;
+
+                    foreach (Data.HexTile playerBuilding in playerBuildings)
+                    {
+                        List<Data.HexTile> neighbours = await GetNeighboursAsync(playerBuilding.gameID, accountID, playerBuilding);
+
+                        int buildingStoneProduction = 0;
+                        int buildingWoodProduction = 0;
+                        int buildingFoodProduction = 0;
+                       
+
+                        foreach (Data.HexTile neighbour in neighbours)
+                        {
+                            if((Terminal.HexType)playerBuilding.hexType == Terminal.HexType.PLAYER1_STONE_MINE || (Terminal.HexType)playerBuilding.hexType == Terminal.HexType.PLAYER2_STONE_MINE)
+                            {
+                                if((Terminal.HexType)neighbour.hexType == Terminal.HexType.PLAYER1_MOUNTAIN || (Terminal.HexType)neighbour.hexType == Terminal.HexType.PLAYER2_MOUNTAIN)
+                                {
+                                    if(playerBuilding.accountID == neighbour.accountID)
+                                    {
+                                        buildingStoneProduction += stoneMine.stonePerSecond;
+                                    }
+                                }
+                            }
+
+                            if ((Terminal.HexType)playerBuilding.hexType == Terminal.HexType.PLAYER1_SAWMILL || (Terminal.HexType)playerBuilding.hexType == Terminal.HexType.PLAYER2_SAWMILL)
+                            {
+                                if ((Terminal.HexType)neighbour.hexType == Terminal.HexType.PLAYER1_FOREST || (Terminal.HexType)neighbour.hexType == Terminal.HexType.PLAYER2_FOREST)
+                                {
+                                    if (playerBuilding.accountID == neighbour.accountID)
+                                    {
+                                        buildingWoodProduction += sawmill.woodPerSecond;
+                                    }
+                                }
+                            }
+
+                            if((Terminal.HexType)playerBuilding.hexType == Terminal.HexType.PLAYER1_FARM || (Terminal.HexType)playerBuilding.hexType == Terminal.HexType.PLAYER2_FARM)
+                            {
+                                if((Terminal.HexType)neighbour.hexType == Terminal.HexType.PLAYER1_CROPS || (Terminal.HexType)neighbour.hexType == Terminal.HexType.PLAYER2_CROPS)
+                                {
+                                    if(playerBuilding.accountID == neighbour.accountID)
+                                    {
+                                        buildingFoodProduction += farm.foodPerSecond;
+                                    }
+                                }
+                            }
+                            
+                        }
+
+                        Console.WriteLine("Pentru cladirea de tip = " + playerBuilding.hexType + "valorile sunt: buildingStoneProduciton = " + buildingStoneProduction + " buildingWoodProduction = " + buildingWoodProduction + " buildingFoodProduction = " + buildingFoodProduction);
+
+
+                        await UpdateBuildingProductionAsync(playerBuilding.gameID, buildingStoneProduction, buildingWoodProduction, buildingFoodProduction, playerBuilding.x, playerBuilding.y);
+
+                        playerStoneProduction += buildingStoneProduction;
+                        playerWoodProduction += buildingWoodProduction;
+                        playerFoodProduction += buildingFoodProduction;
+
+                    }
+                    // ******DEBUG*****
+                    Console.WriteLine("Dupa ce am actalizat productiile tuturor cladirilor. StoneProduction = " + playerStoneProduction + " WoodProduction = " + playerWoodProduction + " FoodProduction = " + playerFoodProduction);
+
+                    await UpdatePlayerProductionAsync(accountID, playerStoneProduction, playerWoodProduction, playerFoodProduction);
+
+                    connection.Close();
+                }
+                return true;
+            });
+            return await task;
+        }
 
         private async static void CollectResources()
         {
@@ -1543,7 +1935,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             {
                                 if (player.food >= unit.requiredFood)
                                 {
-                                    await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold, player.stone, player.wood, player.food - unit.requiredFood, player.stoneProduction, player.woodProduction, player.foodProduction);
+                                    await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold, player.stone, player.wood, player.food - unit.requiredFood);
 
                                     List<Data.HexTile> path = await FindPath(player.gameID, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y);
                                     string serializedPath = await Data.Serialize<List<Data.HexTile>>(path);
@@ -1687,7 +2079,25 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }
-       
+
+        private async static Task<bool> UpdateUnitArmyCampAsync(long gameID, long accountID, int army_camp_x, int army_camp_y)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string query = String.Format("UPDATE units SET army_camp_x = {0}, army_camp_y = {1} WHERE game_id = {2} AND account_id = {3};", army_camp_x, army_camp_y, gameID, accountID);
+                    using (MySqlCommand command = new MySqlCommand(query, connection))
+                    {
+                        command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                }
+                return true;
+            });
+            return await task;
+        }
+
 
         public async static void UpdateUnitReady(int clientID, long unitDatabaseID, int grid_x, int grid_y, int isPlayer1)
         {
@@ -2036,7 +2446,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 
                             }
 
-                            update_query = String.Format("UPDATE hex_grid SET is_defending = 1 WHERE game_id = {0} AND x = {1} AND y = {2};", player.gameID, defendingArmyCamp_x, defendingArmyCamp_y);
+                            update_query = String.Format("UPDATE hex_grid SET is_defending = 1, attacker_account_id = {0} WHERE game_id = {1} AND x = {2} AND y = {3};", accountID, player.gameID, defendingArmyCamp_x, defendingArmyCamp_y);
                             using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                             {
                                 update_command.ExecuteNonQuery();
@@ -2072,6 +2482,453 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
 
+        }
+
+
+        public async static void BattleManager()
+        {
+            await BattleManagerAsync();
+        }
+
+
+        public async static Task<bool> BattleManagerAsync()
+        {
+            Task<bool> task = Task.Run(async () =>
+            {                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    List<Data.HexTile> defendingArmyCamps = new List<Data.HexTile>();
+                   
+                    string select_query = String.Format("SELECT game_id, account_id, x, y, hex_type, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack, attacker_account_id FROM hex_grid WHERE is_defending = 1;");
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    Data.HexTile tile = new Data.HexTile();
+
+                                    tile.gameID = long.Parse(reader["game_id"].ToString());
+                                    tile.accountID = long.Parse(reader["account_id"].ToString());
+                                    tile.attackerAccountID = long.Parse(reader["attacker_account_id"].ToString());
+                                    tile.x = int.Parse(reader["x"].ToString());
+                                    tile.y = int.Parse(reader["y"].ToString());
+                                    tile.hexType = int.Parse(reader["hex_type"].ToString());                                    
+                                    tile.health = int.Parse(reader["health"].ToString());
+                                    tile.capacity = int.Parse(reader["capacity"].ToString());
+                                    tile.attack = int.Parse(reader["attack"].ToString());
+                                    tile.defense = int.Parse(reader["defense"].ToString());
+
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["is_attacking"].ToString(), out isTrue);
+                                    tile.isAttacking = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                    tile.isDefending = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_under_attack"].ToString(), out isTrue);
+                                    tile.isUnderAttack = isTrue > 0;
+
+
+                                    defendingArmyCamps.Add(tile);
+                                }
+                            }
+                        }
+                    }
+
+                    if(defendingArmyCamps.Count > 0)
+                    {
+                        foreach (Data.HexTile defendingArmyCamp in defendingArmyCamps)
+                        {
+                            List<Data.Unit> attackingUnits = new List<Data.Unit>();
+
+                            string selectUnits_query = String.Format("SELECT id, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, is_player1_unit, health, damage, def_damage, is_defending FROM units WHERE game_id = {0} AND target_x = {1} AND target_y = {2} AND is_defending = 0;", defendingArmyCamp.gameID, defendingArmyCamp.x, defendingArmyCamp.y);
+                            using (MySqlCommand selectUnits_command = new MySqlCommand(selectUnits_query, connection))
+                            {
+                                using (MySqlDataReader reader = selectUnits_command.ExecuteReader())
+                                {
+                                    if (reader.HasRows)
+                                    {
+                                        while (reader.Read())
+                                        {
+                                            Data.Unit unit = new Data.Unit();
+
+                                            long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                            long.TryParse(reader["account_id"].ToString(), out unit.accountID);                                            
+                                            int.TryParse(reader["game_id"].ToString(), out unit.gameID);
+                                            int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                            int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                            int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                            int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                            int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                            int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                            int.TryParse(reader["health"].ToString(), out unit.health);
+                                            int.TryParse(reader["damage"].ToString(), out unit.damage);
+                                            int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
+
+
+                                            int isTrue = 0;
+                                            int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                            unit.isPlayer1Unit = isTrue > 0;
+
+                                            isTrue = 0;
+                                            int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                            unit.isDefending = isTrue > 0;
+
+                                            attackingUnits.Add(unit);
+                                        }
+                                    }
+
+                                }
+                            }
+
+                            if(attackingUnits.Count > 0)
+                            {
+                                bool canStartBattle = true;
+
+                                foreach (Data.Unit unit in attackingUnits)
+                                {
+                                    if (unit.current_x != unit.target_x || unit.current_y != unit.target_y)
+                                    {
+                                        canStartBattle = false;
+                                        break;
+                                    }
+                                }
+
+                                if (canStartBattle)
+                                {
+                                    Data.HexTile attackingArmyCamp = await GetArmyCampDataAsync(attackingUnits[0].gameID, attackingUnits[0].armyCamp_x, attackingUnits[0].armyCamp_y);
+                                    List<Data.Unit> defendingUnits = new List<Data.Unit>();
+
+                                    string selectDefendingUnits_query = String.Format("SELECT id, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, is_player1_unit, health, damage, def_damage, is_defending FROM units WHERE game_id = {0} AND army_camp_x = {1} AND army_camp_y = {2} AND is_defending = 1;", defendingArmyCamp.gameID, defendingArmyCamp.x, defendingArmyCamp.y);
+                                    using (MySqlCommand selectDefendingUnits_command = new MySqlCommand(selectDefendingUnits_query, connection))
+                                    {
+                                        using (MySqlDataReader reader = selectDefendingUnits_command.ExecuteReader())
+                                        {
+                                            if (reader.HasRows)
+                                            {
+                                                while (reader.Read())
+                                                {
+                                                    Data.Unit unit = new Data.Unit();
+
+                                                    long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                                    int.TryParse(reader["game_id"].ToString(), out unit.gameID);
+                                                    long.TryParse(reader["account_id"].ToString(), out unit.accountID);
+                                                    int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                                    int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                                    int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                                    int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                                    int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                                    int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                                    int.TryParse(reader["health"].ToString(), out unit.health);
+                                                    int.TryParse(reader["damage"].ToString(), out unit.damage);
+                                                    int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
+
+
+                                                    int isTrue = 0;
+                                                    int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                                    unit.isPlayer1Unit = isTrue > 0;
+
+                                                    isTrue = 0;
+                                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                                    unit.isDefending = isTrue > 0;
+
+                                                    defendingUnits.Add(unit);
+                                                }
+                                            }
+
+                                        }
+                                    }
+
+                                    Data.Player attacker = await GetPlayerDataAsync(defendingArmyCamp.attackerAccountID);
+
+                                    long attackerAccountID = defendingArmyCamp.attackerAccountID;
+
+                                    if (defendingUnits.Count > 0)
+                                    {
+
+                                        Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
+
+
+                                        await Battle(attacker, defender, attackingArmyCamp, defendingArmyCamp, attackingUnits, defendingUnits);
+                                    }
+                                    else
+                                    {
+                                        if (attacker.isPlayer1 == 1)
+                                        {
+                                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);                                            
+                                        }
+                                        else
+                                        {
+                                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                                        }
+
+                                        await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
+                                        await UpdateHexTileIsDefendingAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                                        await UpdateHexTileIsUnderAttackAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                                        await UpdateArmyCampNeighboursAsync(defendingArmyCamp.gameID, attackerAccountID, attacker.isPlayer1, defendingArmyCamp);
+                                        await UpdateBuildingsAndPlayerProduction(attackerAccountID);
+                                        await UpdateBuildingsAndPlayerProduction(defendingArmyCamp.accountID);
+                                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
+                                    }
+
+
+                                }
+                            }                            
+                        }
+                    }
+                   
+                    connection.Close();
+                }
+
+                return true;
+            });
+            return await task;
+
+        }
+
+
+        private async static Task<bool> Battle(Data.Player attacker, Data.Player defender, Data.HexTile attackingArmyCamp, Data.HexTile defendingArmyCamp, List<Data.Unit> attackingUnits, List<Data.Unit> defendingUnits)
+        {
+            Task<bool> task = Task.Run(async () =>
+            {                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    long attackerAccountID = defendingArmyCamp.attackerAccountID;
+                    long defenderAccountID = defendingArmyCamp.accountID;
+
+                    await UpdateHexTileIsUnderAttackAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, true);
+                    
+                    if(defender.isPlayer1 == 1)
+                    {
+                        await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP_UNDER_ATTACK);
+                    }
+                    else
+                    {
+                        await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP_UNDER_ATTACK);
+
+                    }                    
+
+                    int result = await BattleResult(attackingUnits, defendingUnits);
+
+                    if(result == 0) // attackers won
+                    {                        
+                        if(attacker.isPlayer1 == 1)
+                        {
+                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);
+                        }
+                        else
+                        {
+                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                        }
+
+
+                        await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
+                        await UpdateHexTileIsDefendingAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                        await UpdateHexTileIsUnderAttackAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                        await UpdateArmyCampNeighboursAsync(attacker.gameID, attackerAccountID, attacker.isPlayer1, defendingArmyCamp);
+                        await UpdateBuildingsAndPlayerProduction(attackerAccountID);
+                        await UpdateBuildingsAndPlayerProduction(defenderAccountID);
+                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);                        
+                    }
+                    else // defenders won
+                    {
+                        if (defender.isPlayer1 == 1)
+                        {
+                            await UpdateHexTileTypeAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);
+                        }
+                        else
+                        {
+                            await UpdateHexTileTypeAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                        }
+                        await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
+                        await UpdateHexTileIsDefendingAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                        await UpdateHexTileIsUnderAttackAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+
+                    }
+                    connection.Close();
+                }
+                return true;
+            });
+            return await task;
+        }
+
+
+        private async static Task<int> BattleResult(List<Data.Unit> attackingUnits, List<Data.Unit> defendingUnits)
+        {
+            Task<int> task = Task.Run(async () =>
+            {
+                int result = 0; // the result of the battle: 0 for attackers, 1 for defenders
+                float gameTick = 1f / 5; // 5 ticks per second
+                int[] teamToAttackFirstDynamicWeights = new int[] { 50, 50 }; // first value is for attackers and second for defenders
+                int[] attackersDynamicDamageWeights = new int[] { 50, 25, 25 }; // dynamic weights of attackers for dealing damage
+                int[] defendersDynamicDamageWeights = new int[] { 50, 25, 25 }; // dynamic weights of defenders for dealing damage
+
+
+                while(attackingUnits.Count > 0 && defendingUnits.Count > 0)
+                {
+                    System.Threading.Thread.Sleep((int)(gameTick * 1000));
+
+                    Data.Unit attacker = attackingUnits[new Random().Next(attackingUnits.Count)];
+                    Data.Unit defender = defendingUnits[new Random().Next(defendingUnits.Count)];
+
+                    int teamToAttackFirst = GetTeamToAttackFirst(teamToAttackFirstDynamicWeights);
+
+                    if(teamToAttackFirst == 0)
+                    {
+                        int attackerDamageType = GetDamageType(attackersDynamicDamageWeights);
+                        DealDamage(attacker.damage, attackerDamageType, defender);
+                        if(defender.health == 0)
+                        {
+                            await DeleteUnitFromDB(defender.databaseID);
+                            defendingUnits.Remove(defender);
+                        }
+                        else
+                        {                          
+                            int defenderDamageType = GetDamageType(defendersDynamicDamageWeights);
+                            DealDamage(defender.def_damage, defenderDamageType, attacker);
+                            if(attacker.health == 0)
+                            {
+                                await DeleteUnitFromDB(attacker.databaseID);
+                                attackingUnits.Remove(attacker);
+                            }
+                        }
+
+                    }
+                    else
+                    {
+                        int defenderDamageType = GetDamageType(defendersDynamicDamageWeights);
+                        DealDamage(defender.def_damage, defenderDamageType, attacker);
+                        if (attacker.health == 0)
+                        {
+                            await DeleteUnitFromDB(attacker.databaseID);
+                            attackingUnits.Remove(attacker);
+                        }
+                        else
+                        {
+                            int attackerDamageType = GetDamageType(attackersDynamicDamageWeights);
+                            DealDamage(attacker.damage, attackerDamageType, defender);
+                            if (defender.health == 0)
+                            {
+                                await DeleteUnitFromDB(defender.databaseID);
+                                defendingUnits.Remove(defender);
+                            }
+
+                        }
+                    }
+                }
+
+                result = (attackingUnits.Count == 0) ? 1 : 0;
+                                           
+                return result;
+            });
+            return await task;
+        }
+        
+        private async static Task<bool> DeleteUnitFromDB(long databaseID)
+        {
+            Task<bool> task = Task.Run(() =>
+            {                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string delete_query = String.Format("DELETE FROM units WHERE id = {0};", databaseID);
+                    using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
+                    {
+                        delete_command.ExecuteNonQuery();                        
+                    }
+                    connection.Close();
+                }
+                return true;
+            });
+            return await task;
+        }
+
+        private static int GetTeamToAttackFirst(int[] teamToAttackFirstDynamicWeights)
+        {
+            Random randomAttackingTeam = new Random();
+            int randomAttackingTeamIndex = randomAttackingTeam.Next(0, 100);
+            int attackingFirstSum = 0;
+
+            for (int i = 0; i < teamToAttackFirstDynamicWeights.Length; i++)
+            {
+                attackingFirstSum += teamToAttackFirstDynamicWeights[i];
+                if (randomAttackingTeamIndex < attackingFirstSum)
+                {
+
+                    int decreaseAmount = 10;
+                    int increaseAmount = 10;
+
+                    teamToAttackFirstDynamicWeights[i] = Math.Max(1, teamToAttackFirstDynamicWeights[i] - decreaseAmount);
+
+                    if (i == 0)
+                    {
+                        teamToAttackFirstDynamicWeights[1] += increaseAmount;
+                    }
+                    else
+                    {
+                        teamToAttackFirstDynamicWeights[0] += increaseAmount;
+                    }
+
+                    return i; // 0 = attackers, 1 = defenders                    
+                }
+            }
+            return randomAttackingTeam.Next(0, 2);
+        }
+
+        private static int GetDamageType(int[] dynamicDamageWeights)
+        {
+            Random randomDamage = new Random();
+
+            int randomDamageIndex = randomDamage.Next(0, 100);
+            int damageTypeSum = 0;
+
+            for (int i = 0; i < dynamicDamageWeights.Length; i++)
+            {
+                damageTypeSum += dynamicDamageWeights[i];
+                if (randomDamageIndex < damageTypeSum)
+                {
+                    if (i != 0)
+                    {
+                        int decreaseAmount = 3;
+                        int increaseAmount = 3;
+
+                        dynamicDamageWeights[i] = Math.Max(1, dynamicDamageWeights[i] - decreaseAmount);
+
+                        for (int j = 1; j < dynamicDamageWeights.Length; j++)
+                        {
+                            if (j != i)
+                            {
+                                dynamicDamageWeights[j] += increaseAmount;
+                            }
+                        }
+                    }
+                    return i; // 0 = normal damage, 1 = decreased damage, 2 = increased damage                  
+                }
+            }
+            return randomDamage.Next(0, 3);
+        }
+
+        private static void DealDamage(int damageValue, int damageType, Data.Unit unitToBeDamaged)
+        {
+            switch (damageType)
+            {
+                case 0: // normal damage
+                    unitToBeDamaged.health = (int)Math.Max(0, unitToBeDamaged.health - damageValue);
+                    break;
+
+                case 1: // decreased damage
+                    unitToBeDamaged.health = (int)Math.Max(0, unitToBeDamaged.health - (damageValue * 0.5f));
+                    break;
+
+                case 2: // increased damage
+                    unitToBeDamaged.health = (int)Math.Max(0, unitToBeDamaged.health - (damageValue * 1.5f));
+                    break;
+            }
         }
 
         #endregion
