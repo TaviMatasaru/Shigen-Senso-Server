@@ -24,7 +24,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         public static void OnClientDisconnected(int id, string ip)
         {
-            
+            Database.LogoutDisconnectedClient(id);
         }
         #endregion
 
@@ -32,7 +32,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         public enum RequestsID
         {
-            AUTH = 1,
+            LOGIN = 1,
             SYNC = 2,
             NEW_GRID = 3,
             SYNC_GRID = 4,
@@ -47,6 +47,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
             CANCEL_SEARCH = 13,            
             UNIT_READY = 14,
             LAUNCH_ATTACK = 15,
+            REGISTER = 16,
+            AUTO_LOGIN = 17,
+            LOGOUT = 18,
+            LEAVE_MATCH = 19
         }
 
         public enum HexType
@@ -74,7 +78,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             PLAYER2_FARM = 20,
             PLAYER2_ARMY_CAMP = 21,
             PLAYER1_ARMY_CAMP_UNDER_ATTACK = 22,
-            PLAYER2_ARMY_CAMP_UNDER_ATTACK = 23
+            PLAYER2_ARMY_CAMP_UNDER_ATTACK = 23,
+            PLAYER1_CASTLE_UNDER_ATTACK = 24,
+            PLAYER2_CASTLE_UNDER_ATTACK = 25
         }
 
         public static void ReceivedPacket(int clientID, Packet packet)
@@ -83,9 +89,28 @@ namespace DevelopersHub.RealtimeNetworking.Server
             string deviceID = "";
             switch ((RequestsID)id)
             {
-                case RequestsID.AUTH:
+                case RequestsID.LOGIN:
                     deviceID = packet.ReadString();
-                    Database.AuthenticatePlayer(clientID, deviceID);
+                    string loginUsername = packet.ReadString();
+                    string loginPassword = packet.ReadString();
+                    Database.LoginPlayer(clientID, deviceID, loginUsername, loginPassword);
+                    break;
+
+                case RequestsID.REGISTER:
+                    deviceID = packet.ReadString();
+                    string registerUsername = packet.ReadString();
+                    string registerPassword = packet.ReadString();
+                    Database.RegisterPlayer(clientID, deviceID, registerUsername, registerPassword);
+                    break;
+
+                case RequestsID.AUTO_LOGIN:
+                    deviceID = packet.ReadString();
+                    Database.AutoLoginPlayer(clientID, deviceID);
+                    break;
+
+                case RequestsID.LOGOUT:                 
+                    string logoutUsername = packet.ReadString();
+                    Database.LogoutPlayer(clientID, logoutUsername);
                     break;
 
                 case RequestsID.SYNC:                    
@@ -166,6 +191,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     Database.LaunchAttack(clientID, attackingUnitsCount, attackingArmyCamp_x, attackingArmyCamp_y, defendingArmyCamp_x, defenndingArmyCamp_y);
                     break;
 
+                case RequestsID.LEAVE_MATCH:
+                    long leavingMatchPlayerAccountID = packet.ReadLong();
+                    Database.LeaveMatch(clientID, leavingMatchPlayerAccountID);
+                    Console.WriteLine("Am primit LEAVE MATCH");
+
+                    break;
             }      
         }
 

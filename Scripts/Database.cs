@@ -66,7 +66,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             double deltaTime = (DateTime.Now - collectTime).TotalSeconds;
 
-            if((DateTime.Now - collectTime).TotalSeconds >= 0.6f)
+            if((DateTime.Now - collectTime).TotalSeconds >= 0.8f)
             {
                 collectTime = DateTime.Now;
                 CollectResources();
@@ -77,34 +77,39 @@ namespace DevelopersHub.RealtimeNetworking.Server
             }
         }
 
-        public async static void AuthenticatePlayer(int id, string device)
+        public async static void LoginPlayer(int id, string device, string username, string password)
         {
-            Data.InitializationData auth = await AuthenticatePlayerAsync(device);          
-            Server.clients[id].device = device;
-            Server.clients[id].account = auth.accountID;
+            Data.InitializationData auth = await LoginPlayerAsync(device, username, password);
 
-            string authData = await Data.Serialize<Data.InitializationData>(auth);
+            if(auth.accountID != -2 && auth.accountID != -3)
+            {
+                Server.clients[id].device = device;
+                Server.clients[id].account = auth.accountID;
 
-            await UpdateHasCastleAsync(auth.accountID, 0, 0, 0);
-            await UpdatePlayerResourcesAsync(auth.accountID, 10, 100, 3000, 3000, 3000);
+                Console.WriteLine("Account ID-ul clientului ce s-a conectat este: " + Server.clients[id].account);
+            }            
+
+            string authData = await Data.Serialize<Data.InitializationData>(auth);                   
 
             Packet packet = new Packet();
 
-            packet.Write((int)Terminal.RequestsID.AUTH);
+            packet.Write((int)Terminal.RequestsID.LOGIN);
             packet.Write(authData);
 
             Sender.TCP_Send(id, packet);
         }
 
-        private async static Task<Data.InitializationData> AuthenticatePlayerAsync(string device)
+        private async static Task<Data.InitializationData> LoginPlayerAsync(string device, string username, string password)
         {
             Task<Data.InitializationData> task = Task.Run(() =>
             {
                 Data.InitializationData initializationData = new Data.InitializationData();
+                bool userFound = false;
+                bool isOnline = false;
+
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id FROM accounts WHERE device_id = '{0}';", device);
-                    bool userFound = false;
+                    string select_query = String.Format("SELECT id, username, is_online FROM accounts WHERE username = '{0}' AND password = '{1}';", username, password);                    
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -114,6 +119,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 while (reader.Read())
                                 {
                                     initializationData.accountID = long.Parse(reader["id"].ToString());
+                                    initializationData.username = reader["username"].ToString();
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["is_online"].ToString(), out isTrue);
+                                    isOnline = isTrue > 0;
+
                                     userFound = true;
                                 }
                             }
@@ -121,15 +132,24 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     }
                     if (!userFound)
                     {
-                        string insert_query = String.Format("INSERT INTO accounts (device_id) VALUES ('{0}');", device);
-                        using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
+                        initializationData.accountID = -2;                      
+                    }
+                    else
+                    {
+                        if (isOnline)
                         {
-                            insert_command.ExecuteNonQuery();
-                            initializationData.accountID = insert_command.LastInsertedId;
+                            initializationData.accountID = -3;
+                        }
+                        else
+                        {
+                            string updateIsOnline_query= String.Format("UPDATE accounts SET is_online = 1 WHERE id = {0}", initializationData.accountID);
+                            using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                            {
+                                updatePlayer1_command.ExecuteNonQuery();
+                            }
                         }
                     }
-                    initializationData.serverUnits = GetServerUnits(connection);
-                    
+                    connection.Close();
                 }              
 
                 return initializationData;
@@ -137,7 +157,226 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-          
+        public async static void AutoLoginPlayer(int id, string device)
+        {
+            Data.InitializationData auth = await AutoLoginPlayerAsync(device);
+
+            if (auth.accountID != -2 && auth.accountID != -3)
+            {
+                Server.clients[id].device = device;
+                Server.clients[id].account = auth.accountID;
+            }
+            Console.WriteLine("Account ID-ul clientului ce s-a conectat este: " + Server.clients[id].account);
+
+            string authData = await Data.Serialize<Data.InitializationData>(auth);            
+
+            Packet packet = new Packet();
+
+            packet.Write((int)Terminal.RequestsID.AUTO_LOGIN);
+            packet.Write(authData);
+
+            Sender.TCP_Send(id, packet);
+        }
+
+        private async static Task<Data.InitializationData> AutoLoginPlayerAsync(string device)
+        {
+            Task<Data.InitializationData> task = Task.Run(() =>
+            {
+                Data.InitializationData initializationData = new Data.InitializationData();
+                bool userFound = false;
+                bool isOnline = false;
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT id, username, is_online FROM accounts WHERE device_id = '{0}';", device);
+                    
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    initializationData.accountID = long.Parse(reader["id"].ToString());
+                                    initializationData.username = reader["username"].ToString();                                    
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["is_online"].ToString(), out isTrue);
+                                    isOnline = isTrue > 0;
+
+                                    userFound = true;
+                                }
+                            }
+                        }
+                    }
+                    if (userFound == false || isOnline == true)
+                    {
+                        initializationData.accountID = -2;
+                    }
+                    else
+                    {
+                        if (userFound == true && isOnline == false)
+                        {
+                            string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 1 WHERE id = {0}", initializationData.accountID);
+                            using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                            {
+                                updatePlayer1_command.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                }
+
+                return initializationData;
+            });
+            return await task;
+        }
+
+        public async static void RegisterPlayer(int id, string device, string username, string password)
+        {
+            Data.InitializationData auth = await RegisterPlayerAsync(device, username, password);
+
+            if (auth.accountID != -2)
+            {
+                Server.clients[id].device = device;
+                Server.clients[id].account = auth.accountID;
+            }
+
+            string authData = await Data.Serialize<Data.InitializationData>(auth);
+
+            Packet packet = new Packet();
+
+            packet.Write((int)Terminal.RequestsID.REGISTER);
+            packet.Write(authData);
+
+            Sender.TCP_Send(id, packet);
+        }
+
+        private async static Task<Data.InitializationData> RegisterPlayerAsync(string device, string username, string password)
+        {
+            Task<Data.InitializationData> task = Task.Run(() =>
+            {
+                Data.InitializationData initializationData = new Data.InitializationData();
+                
+                bool userFound = false;
+                bool isOnline = false;
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT id, username, is_online FROM accounts WHERE username = '{0}';", username, password);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    initializationData.accountID = long.Parse(reader["id"].ToString());
+                                    initializationData.username = reader["username"].ToString();
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["is_online"].ToString(), out isTrue);
+                                    isOnline = isTrue > 0;
+
+                                    userFound = true;
+                                }
+                            }
+                        }
+                    }
+                    if (userFound)
+                    {
+                        initializationData.accountID = -2;
+                    }
+                    else
+                    {
+                        string insert_query = String.Format("INSERT INTO accounts (device_id, username, password) VALUES ('{0}', '{1}', '{2}');", device, username, password);
+                        using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
+                        {
+                            insert_command.ExecuteNonQuery();
+                            initializationData.accountID = insert_command.LastInsertedId;                            
+                        }
+
+                        string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 1 WHERE id = {0}", initializationData.accountID);
+                        using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                        {
+                            updatePlayer1_command.ExecuteNonQuery();
+                        }
+                        initializationData.username = username;
+                    }
+                    connection.Close();
+                }
+
+                return initializationData;
+            });
+            return await task;
+        }
+
+        public async static void LogoutPlayer(int id, string username)
+        {
+            int response = await LogoutPlayerAsync(id, username);
+                      
+
+            Packet packet = new Packet();
+
+            packet.Write((int)Terminal.RequestsID.LOGOUT);
+            packet.Write(response);
+
+            Sender.TCP_Send(id, packet);
+        }
+
+        private async static Task<int> LogoutPlayerAsync(int id, string username)
+        {
+            long accountID = Server.clients[id].account;
+            Task<int> task = Task.Run(() =>
+            {
+                int response = 0;               
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                                 
+                    string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 0, in_game = 0, device_id = 'none' WHERE id = {0} AND username = '{1}'", accountID, username);
+                    using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                    {
+                        updatePlayer1_command.ExecuteNonQuery();
+                        response = 1;
+                    }                                            
+                    connection.Close();
+                }
+
+                return response;
+            });
+            return await task;
+        }
+
+        public async static void LogoutDisconnectedClient(int id)
+        {
+            await LogoutDisconnectedClientAsync(id);
+        }
+
+        private async static Task<bool> LogoutDisconnectedClientAsync(int id)
+        {            
+            Task<bool> task = Task.Run(() =>
+            {
+                long accountID = Server.clients[id].account;                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+
+                    string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 0, in_game = 0 WHERE id = {0};", accountID);
+                    using (MySqlCommand updateIsOnline_command = new MySqlCommand(updateIsOnline_query, connection))
+                    {
+                        updateIsOnline_command.ExecuteNonQuery();                       
+                    }
+                    connection.Close();
+                }
+
+                return true ;
+            });
+            return await task;
+        }
+
+
+
         public async static void GetPlayerData(int id)
         {
             long accountID = Server.clients[id].account;
@@ -1143,7 +1382,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string update_query = String.Format("UPDATE accounts SET has_castle = {0}, castle_x = {2}, castle_y = {3} WHERE id = '{1}';", hasCastle, accountID, x_pos, y_pos);
+                    string update_query = String.Format("UPDATE accounts SET has_castle = {0}, castle_x = {2}, castle_y = {3} WHERE id = {1};", hasCastle, accountID, x_pos, y_pos);
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
@@ -1656,11 +1895,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 }
                             }
                         }
-                    }
-
-                    //***********DEBUG**********
-                    Console.WriteLine("Am selectat toate constructiile de pe harta. Sunt in numar de: " + playerBuildings.Count);
-
+                    }                    
 
                     int playerStoneProduction = 0;
                     int playerWoodProduction = 0;
@@ -1712,8 +1947,6 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             
                         }
 
-                        Console.WriteLine("Pentru cladirea de tip = " + playerBuilding.hexType + "valorile sunt: buildingStoneProduciton = " + buildingStoneProduction + " buildingWoodProduction = " + buildingWoodProduction + " buildingFoodProduction = " + buildingFoodProduction);
-
 
                         await UpdateBuildingProductionAsync(playerBuilding.gameID, buildingStoneProduction, buildingWoodProduction, buildingFoodProduction, playerBuilding.x, playerBuilding.y);
 
@@ -1722,9 +1955,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         playerFoodProduction += buildingFoodProduction;
 
                     }
-                    // ******DEBUG*****
-                    Console.WriteLine("Dupa ce am actalizat productiile tuturor cladirilor. StoneProduction = " + playerStoneProduction + " WoodProduction = " + playerWoodProduction + " FoodProduction = " + playerFoodProduction);
-
+                    
                     await UpdatePlayerProductionAsync(accountID, playerStoneProduction, playerWoodProduction, playerFoodProduction);
 
                     connection.Close();
@@ -1923,7 +2154,18 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     Data.ServerUnit unit = GetServerUnit(connection, unitGlobalID, level);
                     if(unit != null)
                     {
-                        Data.ServerBuilding serverArmyCamp = await GetServerBuildingAsync("army_camp", 1);
+                        Data.ServerBuilding serverArmyCamp = new Data.ServerBuilding();
+
+                        if (armyCamp_x == player.castle_x && armyCamp_y == player.castle_y)
+                        {
+                            serverArmyCamp = await GetServerBuildingAsync("castle", 1);
+                        }
+                        else
+                        {
+                             serverArmyCamp = await GetServerBuildingAsync("army_camp", 1);
+                        }
+
+                        
                         Data.HexTile unitArmyCamp = await GetArmyCampDataAsync(player.gameID, armyCamp_x, armyCamp_y);
                         
                         int max_capacity = serverArmyCamp.max_capacity;
@@ -1937,9 +2179,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 {
                                     await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold, player.stone, player.wood, player.food - unit.requiredFood);
 
-                                    List<Data.HexTile> path = await FindPath(player.gameID, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y);
-                                    string serializedPath = await Data.Serialize<List<Data.HexTile>>(path);
+                                    string serializedPath = "";
 
+                                    if(player.castle_x != armyCamp_x && player.castle_y != armyCamp_y)
+                                    {
+                                        List<Data.HexTile> path = await FindPath(player.gameID, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y);
+                                        serializedPath = await Data.Serialize<List<Data.HexTile>>(path);
+                                    }
+                                   
                                     string insertQuery;
                                     if (player.isPlayer1 == 1)
                                     {
@@ -2080,17 +2327,103 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        private async static Task<bool> UpdateUnitArmyCampAsync(long gameID, long accountID, int army_camp_x, int army_camp_y)
+        private async static Task<bool> UpdateUnitArmyCampAsync(long gameID, long accountID, int army_camp_x, int army_camp_y, List<Data.Unit> units)
         {
             Task<bool> task = Task.Run(() =>
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string query = String.Format("UPDATE units SET army_camp_x = {0}, army_camp_y = {1} WHERE game_id = {2} AND account_id = {3};", army_camp_x, army_camp_y, gameID, accountID);
+                    foreach(Data.Unit unit in units)
+                    {
+                        string query = String.Format("UPDATE units SET army_camp_x = {0}, army_camp_y = {1} WHERE game_id = {2} AND account_id = {3} AND id = {4};", army_camp_x, army_camp_y, gameID, accountID, unit.databaseID);
+                        using (MySqlCommand command = new MySqlCommand(query, connection))
+                        {
+                            command.ExecuteNonQuery();
+                        }
+                    }
+                    
+                    connection.Close();
+                }
+                return true;
+            });
+            return await task;
+        }
+
+        private async static Task<bool> UpdateArmyCampStatsAsync(long gameID, long accountID, int army_camp_x, int army_camp_y)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                using (MySqlConnection connection = GetMySqlConnection())
+                {                   
+                    int capacity = 0;
+                    int attack = 0;
+                    int defense = 0;
+
+                    string select_query = String.Format("SELECT units.id, units.global_id, units.level, units.game_id, units.trained, units.ready_player1, units.ready_player2, units.trained_time, units.army_camp_x, units.army_camp_y, units.current_x, units.current_y, units.target_x, units.target_y, units.path, units.is_player1_unit, units.is_defending, server_units.health, server_units.damage, server_units.def_damage, server_units.train_time, server_units.housing FROM units LEFT JOIN server_units ON units.global_id = server_units.global_id && units.level = server_units.level WHERE units.game_id = '{0}' AND units.army_camp_x = {1} AND units.army_camp_y = {2} AND units.account_id = {3};", gameID, army_camp_x, army_camp_y, accountID);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    Data.Unit unit = new Data.Unit();
+
+                                    unit.id = (Data.UnitID)Enum.Parse(typeof(Data.UnitID), reader["global_id"].ToString());
+                                    long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                    int.TryParse(reader["level"].ToString(), out unit.level);
+                                    int.TryParse(reader["game_id"].ToString(), out unit.gameID);
+                                    int.TryParse(reader["housing"].ToString(), out unit.housing);
+                                    int.TryParse(reader["train_time"].ToString(), out unit.trainTime);
+                                    float.TryParse(reader["trained_time"].ToString(), out unit.trainedTime);
+                                    int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                    int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                    int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                    int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                    int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                    int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                    int.TryParse(reader["health"].ToString(), out unit.health);
+                                    int.TryParse(reader["damage"].ToString(), out unit.damage);
+                                    int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
+                                    unit.serializedPath = reader["path"].ToString();
+
+
+                                    int isTrue = 0;
+                                    int.TryParse(reader["trained"].ToString(), out isTrue);
+                                    unit.trained = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["ready_player1"].ToString(), out isTrue);
+                                    unit.ready_player1 = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["ready_player2"].ToString(), out isTrue);
+                                    unit.ready_player2 = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                    unit.isPlayer1Unit = isTrue > 0;
+
+                                    isTrue = 0;
+                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                    unit.isDefending = isTrue > 0;
+
+                                    capacity += unit.housing;
+                                    attack += unit.damage;
+                                    defense += unit.def_damage;
+                                   
+                                }
+                            }
+                        }
+                    }
+                    
+                    string query = String.Format("UPDATE hex_grid SET capacity = {0}, attack = {1}, defense = {2} WHERE game_id = {3} AND account_id = {4} AND x = {5} AND y = {6};", capacity, attack, defense, gameID, accountID, army_camp_x, army_camp_y);
                     using (MySqlCommand command = new MySqlCommand(query, connection))
                     {
                         command.ExecuteNonQuery();
-                    }
+                    }                    
+
                     connection.Close();
                 }
                 return true;
@@ -2231,7 +2564,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id FROM accounts WHERE is_searching = 1");
+                    string select_query = String.Format("SELECT id FROM accounts WHERE is_searching = 1 AND in_game = 0");
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -2283,6 +2616,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         {
                             updatePlayer2_command.ExecuteNonQuery();
                         }
+
+                        await UpdateHasCastleAsync(accounts[account1_index], 0, 0, 0);
+                        await UpdatePlayerResourcesAsync(accounts[account1_index], 10, 100, 3000, 3000, 3000);
+
+                        await UpdateHasCastleAsync(accounts[account2_index], 0, 0, 0);
+                        await UpdatePlayerResourcesAsync(accounts[account2_index], 10, 100, 3000, 3000, 3000);
 
                         await GenerateGridAsync(gameID);
                     }
@@ -2430,7 +2769,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 long accountID = Server.clients[clientID].account;
                 Data.Player player = await GetPlayerDataAsync(accountID);
-                Data.HexTile attackingArmyCamp = await GetArmyCampDataAsync(player.gameID, attackingArmyCamp_x, attackingArmyCamp_y);
+                Data.HexTile attackingArmyCamp = await GetArmyCampDataAsync(player.gameID, attackingArmyCamp_x, attackingArmyCamp_y);               
 
                 if (attackingArmyCamp.isUnderAttack == false && attackingArmyCamp.isAttacking == false)
                 {
@@ -2439,7 +2778,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         using (MySqlConnection connection = GetMySqlConnection())
                         {
-                            string update_query = String.Format("UPDATE hex_grid SET is_attacking = 1 WHERE game_id = {0} AND x = {1} AND y = {2};", player.gameID, attackingArmyCamp_x, attackingArmyCamp_y);
+                            Data.ServerUnit barbarian = GetServerUnit(connection, "barbarian", 1);
+                            
+                            string update_query = String.Format("UPDATE hex_grid SET is_attacking = 1, capacity = capacity - {0}, attack = attack - {1}, defense = defense - {2} WHERE game_id = {3} AND x = {4} AND y = {5};", barbarian.housing * attackingUnitsCount, barbarian.damage * attackingUnitsCount, barbarian.def_damage * attackingUnitsCount, player.gameID, attackingArmyCamp_x, attackingArmyCamp_y);
                             using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                             {
                                 update_command.ExecuteNonQuery();
@@ -2674,7 +3015,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                         await UpdateArmyCampNeighboursAsync(defendingArmyCamp.gameID, attackerAccountID, attacker.isPlayer1, defendingArmyCamp);
                                         await UpdateBuildingsAndPlayerProduction(attackerAccountID);
                                         await UpdateBuildingsAndPlayerProduction(defendingArmyCamp.accountID);
-                                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
+                                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, attackingUnits);
+                                        await UpdateArmyCampStatsAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
                                     }
 
 
@@ -2703,15 +3045,31 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     long defenderAccountID = defendingArmyCamp.accountID;
 
                     await UpdateHexTileIsUnderAttackAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, true);
-                    
+
+
+
+
                     if(defender.isPlayer1 == 1)
                     {
-                        await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP_UNDER_ATTACK);
+                        if(defender.castle_x == defendingArmyCamp.x && defender.castle_y == defendingArmyCamp.y)
+                        {
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_CASTLE_UNDER_ATTACK);
+                        }
+                        else
+                        {
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP_UNDER_ATTACK);
+                        }
                     }
                     else
                     {
-                        await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP_UNDER_ATTACK);
-
+                        if (defender.castle_x == defendingArmyCamp.x && defender.castle_y == defendingArmyCamp.y)
+                        {
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_CASTLE_UNDER_ATTACK);
+                        }
+                        else
+                        {
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP_UNDER_ATTACK);
+                        }
                     }                    
 
                     int result = await BattleResult(attackingUnits, defendingUnits);
@@ -2734,7 +3092,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         await UpdateArmyCampNeighboursAsync(attacker.gameID, attackerAccountID, attacker.isPlayer1, defendingArmyCamp);
                         await UpdateBuildingsAndPlayerProduction(attackerAccountID);
                         await UpdateBuildingsAndPlayerProduction(defenderAccountID);
-                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);                        
+                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, attackingUnits);
+                        await UpdateArmyCampStatsAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
                     }
                     else // defenders won
                     {
@@ -2749,6 +3108,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
                         await UpdateHexTileIsDefendingAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
                         await UpdateHexTileIsUnderAttackAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                        await UpdateArmyCampStatsAsync(defender.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
 
                     }
                     connection.Close();
@@ -2929,6 +3289,46 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     unitToBeDamaged.health = (int)Math.Max(0, unitToBeDamaged.health - (damageValue * 1.5f));
                     break;
             }
+        }
+
+
+        public async static void LeaveMatch(int id, long accountID)
+        {
+            int response = await LeaveMatchAsync(id, accountID);
+
+
+            Packet packet = new Packet();
+
+            packet.Write((int)Terminal.RequestsID.LEAVE_MATCH);
+            packet.Write(response);
+
+            Sender.TCP_Send(id, packet);
+        }
+
+        private async static Task<int> LeaveMatchAsync(int id, long accountID)
+        {            
+
+            Console.WriteLine("ID-ul jucatorului care paraseste meciul este: " + accountID);
+
+            Task<int> task = Task.Run(() =>
+            {
+                int response = 0;
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+
+                    string updateIsOnline_query = String.Format("UPDATE accounts SET in_game = 0, game_id = -1, stone = 0, wood = 0, food = 0, stone_production = 0, wood_production = 0, food_production = 0, has_castle = 0, castle_x = 0, castle_y = 0 WHERE id = {0};", accountID);
+                    using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                    {
+                        updatePlayer1_command.ExecuteNonQuery();
+                        response = 1;
+                    }
+                    connection.Close();
+                }
+
+                return response;
+            });
+            return await task;
         }
 
         #endregion

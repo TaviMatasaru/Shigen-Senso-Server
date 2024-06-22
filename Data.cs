@@ -12,6 +12,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
     {
         public class Player
         {
+            public string username = "username";
+
+
             public int gold = 100;
             public int gems = 10;
             public int wood = 1000;
@@ -38,6 +41,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         public class InitializationData
         {
             public long accountID = 0;
+            public string username = "username";
             public List<ServerUnit> serverUnits = new List<ServerUnit>();
         }
 
