@@ -50,7 +50,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             REGISTER = 16,
             AUTO_LOGIN = 17,
             LOGOUT = 18,
-            LEAVE_MATCH = 19
+            LEAVE_MATCH = 19,
+            SYNC_GAME = 20
         }
 
         public enum HexType
@@ -193,9 +194,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 case RequestsID.LEAVE_MATCH:
                     long leavingMatchPlayerAccountID = packet.ReadLong();
-                    Database.LeaveMatch(clientID, leavingMatchPlayerAccountID);
-                    Console.WriteLine("Am primit LEAVE MATCH");
+                    Database.LeaveMatch(clientID, leavingMatchPlayerAccountID);                   
+                    break;
 
+                case RequestsID.SYNC_GAME:
+                    long gameID = packet.ReadLong();
+                    Database.SyncGame(clientID, gameID);
                     break;
             }      
         }

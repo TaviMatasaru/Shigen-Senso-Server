@@ -12,8 +12,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
     {
         public class Player
         {
+            public long accountID = -1;
             public string username = "username";
 
+            public int victories = 0;
+            public int rank = 0;
 
             public int gold = 100;
             public int gems = 10;
@@ -32,6 +35,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int isOnline = 0;
             public int isSearching = 0;
             public int inGame = 0;
+
             public long gameID = 0;
             public int isPlayer1 = 0;
 
@@ -44,6 +48,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public string username = "username";
             public List<ServerUnit> serverUnits = new List<ServerUnit>();
         }
+
+
 
         public class ServerBuilding
         {
@@ -62,6 +68,20 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int health = 0;
             public int max_capacity = 0;
         }
+
+        public class ServerUnit
+        {
+            public UnitID id = UnitID.barbarian;
+            public int level = 0;
+            public int requiredFood = 0;
+            public int housing = 1;
+            public int health = 0;
+            public int damage = 0;
+            public int def_damage = 0;
+            public int trainTime = 0;
+        }
+
+
 
         public class HexTile
         {
@@ -98,55 +118,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public int rows = 20;
             public int columns = 20;
             public List<HexTile> hexTiles = new List<HexTile>();
-        }        
-
-        public enum UnitID
-        {
-            barbarian,
-            archer
         }
-
-        public class Unit
-        {
-            public UnitID id = UnitID.barbarian;
-            public int gameID = 0;
-            public long accountID = -1;
-            public int level = 0;
-            public long databaseID = 0;
-            public int housing = 1;
-            public bool trained = false;
-            public bool ready_player1 = false;
-            public bool ready_player2 = false;
-            public int health = 0;
-            public int damage = 0;
-            public int def_damage = 0;
-            public int trainTime = 0;
-            public float trainedTime = 0;
-            public int armyCamp_x = 0;
-            public int armyCamp_y = 0;
-            public int current_x = 0;
-            public int current_y = 0;
-            public int target_x = 0;
-            public int target_y = 0;
-            public bool isPlayer1Unit = true;
-            public bool isDefending = true;
-
-            public string serializedPath;
-            
-        }
-
-        public class ServerUnit
-        {
-            public UnitID id = UnitID.barbarian;
-            public int level = 0;
-            public int requiredFood = 0;
-            public int housing = 1;
-            public int health = 0;
-            public int damage = 0;
-            public int def_damage = 0;
-            public int trainTime = 0;
-        }
-
 
         public class PathNode
         {
@@ -182,6 +154,83 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         return true;
                 }
             }
+        }
+
+
+
+        public enum UnitID
+        {
+            barbarian,
+            archer
+        }        
+        public class Unit
+        {
+            public UnitID id = UnitID.barbarian;
+            public int gameID = 0;
+            public long accountID = -1;
+            public int level = 0;
+            public long databaseID = 0;
+            public int housing = 1;
+            public bool trained = false;
+            public bool ready_player1 = false;
+            public bool ready_player2 = false;
+            public int health = 0;
+            public int damage = 0;
+            public int def_damage = 0;
+            public int trainTime = 0;
+            public float trainedTime = 0;
+            public int armyCamp_x = 0;
+            public int armyCamp_y = 0;
+            public int current_x = 0;
+            public int current_y = 0;
+            public int target_x = 0;
+            public int target_y = 0;
+            public bool isPlayer1Unit = true;
+            public bool isDefending = true;
+
+            public string serializedPath;
+            
+        }
+       
+
+
+        public enum PlayerStatus
+        {
+            IN_GAME = 0,
+            LEFT = 1,
+            DISCONNECTED = 2
+
+        }
+
+        public enum GameResultID
+        {
+            NOT_OVER = 0,
+            P1_WON = 1,
+            P2_WON = 2,
+            P1_LEFT = 3,
+            P2_LEFT = 4
+        }
+
+        public class GameData
+        {
+            public long gameID = -1;
+            public long player1AccountID = -1;
+            public long player2AccountID = -1;
+            public GameResultID gameResult = 0;         
+            public PlayerStatus player1Status = 0;
+            public PlayerStatus player2Status = 0;            
+        }
+
+        public class Game
+        {
+            public string player1_username = "";
+            public string player2_username = "";
+            public int player1_victories = 0;
+            public int player2_victories = 0;
+            public int player1_rank = 0;
+            public int player2_rank = 0;
+
+            public GameData gameData = new GameData();
         }
 
 

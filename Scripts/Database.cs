@@ -3,6 +3,7 @@ using MySql.Data.MySqlClient;
 using System.Data;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace DevelopersHub.RealtimeNetworking.Server
 {
@@ -66,13 +67,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             double deltaTime = (DateTime.Now - collectTime).TotalSeconds;
 
-            if((DateTime.Now - collectTime).TotalSeconds >= 0.8f)
+            if((DateTime.Now - collectTime).TotalSeconds >= 1f)
             {
                 collectTime = DateTime.Now;
                 CollectResources();
                 UpdateUnitTraining(deltaTime);
                 UpdateUnitsCoords();
                 GameMaker();
+                GameManager();
                 BattleManager();
             }
         }
@@ -84,9 +86,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             if(auth.accountID != -2 && auth.accountID != -3)
             {
                 Server.clients[id].device = device;
-                Server.clients[id].account = auth.accountID;
-
-                Console.WriteLine("Account ID-ul clientului ce s-a conectat este: " + Server.clients[id].account);
+                Server.clients[id].account = auth.accountID;                
             }            
 
             string authData = await Data.Serialize<Data.InitializationData>(auth);                   
@@ -165,8 +165,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             {
                 Server.clients[id].device = device;
                 Server.clients[id].account = auth.accountID;
-            }
-            Console.WriteLine("Account ID-ul clientului ce s-a conectat este: " + Server.clients[id].account);
+            }            
 
             string authData = await Data.Serialize<Data.InitializationData>(auth);            
 
@@ -361,8 +360,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 long accountID = Server.clients[id].account;                
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
+                    //TODO : Change query to not leave the match 
+                    string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 0, in_game = 0, is_searching = 0, game_id = -1, stone = 0, wood = 0, food = 0, stone_production = 0, wood_production = 0, food_production = 0, has_castle = 0, castle_x = 0, castle_y = 0 WHERE id = {0};", accountID);
 
-                    string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 0, in_game = 0 WHERE id = {0};", accountID);
                     using (MySqlCommand updateIsOnline_command = new MySqlCommand(updateIsOnline_query, connection))
                     {
                         updateIsOnline_command.ExecuteNonQuery();                       
@@ -1017,42 +1017,46 @@ namespace DevelopersHub.RealtimeNetworking.Server
             }
             return unit;
         }
-    
 
 
-        private async static Task<bool> GenerateGridAsync(long gameID)
+
+        private async static Task<bool> OLDGenerateGridAsync(long gameID)
         {
             Task<bool> task = Task.Run(() =>
             {
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string delete_query = String.Format("DELETE FROM hex_grid;");
-                    using (MySqlCommand delete_grid_command = new MySqlCommand(delete_query, connection))
-                    {
-                        delete_grid_command.ExecuteNonQuery();
-                    }
-                    delete_query = String.Format("DELETE FROM units;");
-                    using (MySqlCommand delete_units_command = new MySqlCommand(delete_query, connection))
-                    {
-                        delete_units_command.ExecuteNonQuery();
-                    }
-
-                    Data.HexGrid hexGrid = new Data.HexGrid();                    
+                    int[] dynamicWeights = new int[] { 70, 10, 10, 10 };
+                    Data.HexGrid hexGrid = new Data.HexGrid();
 
                     for (int x = 0; x < hexGrid.rows; x++)
                     {
                         for (int y = 0; y < hexGrid.columns; y++)
                         {
-                            int hexTileType = GetRandomHexTile();
 
+                            int hexTileType = GetRandomHexTile(dynamicWeights);
                             Data.HexTile tile = new Data.HexTile();
                             tile.x = x;
                             tile.y = y;
                             tile.hexType = hexTileType;
 
+
+                            //Data.HexTile tile = new Data.HexTile();
+                            //tile.x = x;
+                            //tile.y = y;
+
+                            //if (x == 10 || y == 5)
+                            //{
+                            //    tile.hexType = 1;
+                            //}
+                            //else
+                            //{
+                            //    tile.hexType = hexTileType;
+                            //}
+
                             hexGrid.hexTiles.Add(tile);
 
-                            string insert_query = String.Format("INSERT INTO hex_grid (game_id, x, y, hex_type) VALUES ({0}, {1}, {2}, {3});",gameID, x, y, hexTileType);
+                            string insert_query = String.Format("INSERT INTO hex_grid (game_id, x, y, hex_type) VALUES ({0}, {1}, {2}, {3});", gameID, x, y, tile.hexType);
                             using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
                             {
                                 insert_command.ExecuteNonQuery();
@@ -1061,10 +1065,81 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     }
                     connection.Close();
                     return true;
-                }                
+                }
             });
             return await task;
         }
+
+        private async static Task<bool> GenerateGridAsync(long gameID)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                int[] dynamicWeights = new int[] { 70, 10, 10, 10 };
+                Data.HexGrid hexGrid = new Data.HexGrid();
+
+                Data.HexTile startingTile = new Data.HexTile();
+
+                for (int x = 0; x < hexGrid.rows; x++)
+                {
+                    for (int y = 0; y < hexGrid.columns; y++)
+                    {
+                        int hexType = GetRandomHexTile(dynamicWeights);
+                        Data.HexTile tile = new Data.HexTile();
+                        tile.x = x;
+                        tile.y = y;
+                        tile.hexType = hexType;
+                        hexGrid.hexTiles.Add(tile);
+
+                        if(hexType == 0)
+                        {
+                            startingTile.x = x;
+                            startingTile.y = y;
+                            startingTile.hexType = hexType;
+                            
+                        }
+                    }
+                }
+
+                bool isWalkable = true;
+                do
+                {
+                    isWalkable = true;
+                    foreach(Data.HexTile destinationTile in hexGrid.hexTiles)
+                    {
+                        if(destinationTile.hexType == 0 || destinationTile.hexType == 3)
+                        {
+                            Data.PathNode pathNode = FindPathOrClosestObstacle(hexGrid, startingTile.x, startingTile.y, destinationTile.x, destinationTile.y);
+                            if (!pathNode.IsWalkable())
+                            {
+                                isWalkable = false;
+                                ModifyHexTileType(hexGrid, pathNode.tile.x, pathNode.tile.y, 0);
+                                
+                                break;
+                            }
+                        }
+                    }
+
+
+                } while (!isWalkable);
+
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    foreach(Data.HexTile tile in hexGrid.hexTiles)
+                    {
+                        string insert_query = String.Format("INSERT INTO hex_grid (game_id, x, y, hex_type) VALUES ({0}, {1}, {2}, {3});", gameID, tile.x, tile.y, tile.hexType);
+                        using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
+                        {
+                            insert_command.ExecuteNonQuery();
+                        }
+                    }                                                                        
+                    connection.Close();
+                    return true;
+                }
+            });
+            return await task;
+        }
+
 
         public async static void SyncGrid(int id)
         {
@@ -1137,10 +1212,79 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
-
-        private static int GetRandomHexTile()
+        public async static void SyncGame(int clientID, long gameID)
         {
-            int[] dynamicWeights = new int[] { 70, 10, 10, 10 };
+            Data.GameData gameData = await GetGameAsync(gameID);
+            Data.Player player1 = await GetPlayerDataAsync(gameData.player1AccountID);
+            Data.Player player2 = await GetPlayerDataAsync(gameData.player2AccountID);
+
+            Data.Game game = new Data.Game();
+            game.player1_username = player1.username;
+            game.player2_username = player2.username;
+            game.player1_victories = player1.victories;
+            game.player2_victories = player2.victories;
+            game.player1_rank = player1.rank;
+            game.player2_rank = player2.rank;
+            game.gameData = gameData;
+
+            String serialisedGame = await Data.Serialize<Data.Game>(game);
+
+            Packet packet = new Packet();
+            packet.Write((int)Terminal.RequestsID.SYNC_GAME);
+            packet.Write(serialisedGame);
+            Sender.TCP_Send(clientID, packet);
+
+        }
+
+        public async static Task<Data.GameData> GetGameAsync(long gameID)
+        {
+            Task<Data.GameData> task = Task.Run(() =>
+            {
+                Data.GameData gameData = new Data.GameData();
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    string select_query = String.Format("SELECT id, player1_id, player2_id, game_result, player1_status, player2_status FROM games WHERE id = {0};", gameID);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    long.TryParse(reader["id"].ToString(), out gameData.gameID);
+                                    long.TryParse(reader["player1_id"].ToString(), out gameData.player1AccountID);
+                                    long.TryParse(reader["player2_id"].ToString(), out gameData.player2AccountID);
+
+
+                                    int gameResult = -1;
+                                    int.TryParse(reader["game_result"].ToString(), out gameResult);
+                                    gameData.gameResult = (Data.GameResultID)gameResult;
+
+                                    int playerStatus = -1;
+                                    int.TryParse(reader["player1_status"].ToString(), out playerStatus);
+                                    gameData.player1Status = (Data.PlayerStatus)playerStatus;
+
+                                    playerStatus = -1;
+                                    int.TryParse(reader["player2_status"].ToString(), out playerStatus);
+                                    gameData.player2Status = (Data.PlayerStatus)playerStatus;
+                                }
+                            }
+                        }
+                        connection.Close();
+                    }
+                }
+                return gameData;
+            });
+            return await task;
+        }
+
+
+
+        private static int GetRandomHexTile(int[] dynamicWeights)
+        {
+            
             int totalWeight = 0;
             foreach (int weight in dynamicWeights)
             {
@@ -1177,6 +1321,18 @@ namespace DevelopersHub.RealtimeNetworking.Server
             }
 
             return 0; // Should never happen unless weights are misconfigured
+        }
+
+        private static void ModifyHexTileType(Data.HexGrid grid, int targetX, int targetY, int newHexType)
+        {
+            foreach (Data.HexTile tile in grid.hexTiles)
+            {
+                if (tile.x == targetX && tile.y == targetY)
+                {
+                    tile.hexType = newHexType;
+                    break;
+                }
+            }
         }
 
         private async static Task<int> GetHexTileTypeAsync(long gameID, int x_pos, int y_pos)
@@ -1674,59 +1830,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }
-
-        //private static async Task<bool> FillGapsAsync()
-        //{
-        //    Task<bool> task = Task.Run(async () =>
-        //    {
-
-        //        using (MySqlConnection connection = GetMySqlConnection())
-        //        {
-        //            Data.HexGrid grid = await GetGridAsync();
-
-        //            foreach(Data.HexTile tile in grid.hexTiles)
-        //            {
-        //                if(tile.hexType == (int)Terminal.HexType.FREE_LAND || tile.hexType == (int)Terminal.HexType.FREE_MOUNTAIN || tile.hexType == (int)Terminal.HexType.FREE_FOREST || tile.hexType == (int)Terminal.HexType.FREE_CROPS)
-        //                {
-        //                    bool isGap = true;
-        //                    List<Data.HexTile> neighbours = await GetNeighboursAsync(tile);
-
-        //                    foreach (Data.HexTile neighbour in neighbours)
-        //                    {
-
-        //                        if (neighbour.hexType == (int)Terminal.HexType.FREE_LAND || neighbour.hexType == (int)Terminal.HexType.FREE_MOUNTAIN || neighbour.hexType == (int)Terminal.HexType.FREE_FOREST || neighbour.hexType == (int)Terminal.HexType.FREE_CROPS)
-        //                        {
-        //                            isGap = false;
-        //                            break;
-        //                        }
-        //                    }
-
-        //                    if (isGap)
-        //                    {
-        //                        switch (tile.hexType)
-        //                        {
-        //                            case (int)Terminal.HexType.FREE_LAND:
-        //                                await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_LAND);
-        //                                break;
-        //                            case (int)Terminal.HexType.FREE_MOUNTAIN:
-        //                                await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_MOUNTAIN);
-        //                                break;
-        //                            case (int)Terminal.HexType.FREE_FOREST:
-        //                                await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_FOREST);
-        //                                break;
-        //                            case (int)Terminal.HexType.FREE_CROPS:
-        //                                await UpdateHexTileTypeAsync(tile.x, tile.y, Terminal.HexType.PLAYER_CROPS);
-        //                                break;
-        //                        }
-        //                    }
-        //                }                        
-        //            }                   
-        //            return true;
-        //        }
-        //    });
-        //    return await task;
-        //}
-
+       
 
 
         private async static Task<bool> UpdatePlayerResourcesAsync(long accountID, int gems, int gold, int stone, int wood, int food)
@@ -2432,6 +2536,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
+
         public async static void UpdateUnitReady(int clientID, long unitDatabaseID, int grid_x, int grid_y, int isPlayer1)
         {
             int result = await UpdateUnitReadyAsync(unitDatabaseID, grid_x, grid_y, isPlayer1);
@@ -2486,6 +2591,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }        
+
 
 
         public async static void StartSearching(int clientID)
@@ -2551,6 +2657,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
+
         private async static void GameMaker()
         {
             await GameMakerAsync();
@@ -2598,7 +2705,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
 
                                             
-                        string insert_query = String.Format("INSERT INTO games (player1_id, player2_id) VALUES ({0}, {1});", accounts[account1_index], accounts[account2_index]);
+                        string insert_query = String.Format("INSERT INTO games (player1_id, player2_id, game_result, player1_status, player2_status) VALUES ({0}, {1}, {3}, {4}, {5});", accounts[account1_index], accounts[account2_index], (int)Data.GameResultID.NOT_OVER, Data.PlayerStatus.IN_GAME, Data.PlayerStatus.IN_GAME);
                         using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
                         {
                             insert_command.ExecuteNonQuery();
@@ -2617,6 +2724,19 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             updatePlayer2_command.ExecuteNonQuery();
                         }
 
+
+                        //TODO : Delete this 
+                        //string delete_query = String.Format("DELETE FROM hex_grid;");
+                        //using (MySqlCommand delete_grid_command = new MySqlCommand(delete_query, connection))
+                        //{
+                        //    delete_grid_command.ExecuteNonQuery();
+                        //}
+                        //delete_query = String.Format("DELETE FROM units;");
+                        //using (MySqlCommand delete_units_command = new MySqlCommand(delete_query, connection))
+                        //{
+                        //    delete_units_command.ExecuteNonQuery();
+                        //}
+
                         await UpdateHasCastleAsync(accounts[account1_index], 0, 0, 0);
                         await UpdatePlayerResourcesAsync(accounts[account1_index], 10, 100, 3000, 3000, 3000);
 
@@ -2631,6 +2751,147 @@ namespace DevelopersHub.RealtimeNetworking.Server
             });
             return await task;
         }
+
+        private async static void GameManager()
+        {
+            await GameManagerAsync();
+        }
+
+        private async static Task<bool> GameManagerAsync()
+        {
+            Task<bool> task = Task.Run(async () =>
+            {                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    List<Data.GameData> activeGames = new List<Data.GameData>();
+
+                    string select_query = String.Format("SELECT id, player1_id, player2_id, game_result, player1_status, player2_status FROM games WHERE game_result = {0};", (int)Data.GameResultID.NOT_OVER);
+                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    {
+                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                while (reader.Read())
+                                {
+                                    Data.GameData game = new Data.GameData();
+                                    
+                                    long.TryParse(reader["id"].ToString(), out game.gameID);
+                                    long.TryParse(reader["player1_id"].ToString(), out game.player1AccountID);
+                                    long.TryParse(reader["player2_id"].ToString(), out game.player2AccountID);
+
+
+                                    int gameResult = -1;
+                                    int.TryParse(reader["game_result"].ToString(), out gameResult);
+                                    game.gameResult = (Data.GameResultID)gameResult;
+
+                                    int playerStatus = -1;
+                                    int.TryParse(reader["player1_status"].ToString(), out playerStatus);
+                                    game.player1Status = (Data.PlayerStatus)playerStatus;
+
+                                    playerStatus = -1;
+                                    int.TryParse(reader["player2_status"].ToString(), out playerStatus);
+                                    game.player2Status = (Data.PlayerStatus)playerStatus;
+
+                                    activeGames.Add(game);
+                                }
+                            }
+                        }
+                    }
+
+                    if(activeGames.Count > 0)
+                    {
+                        foreach (Data.GameData game in activeGames)
+                        {
+                            Data.Player player1 = await GetPlayerDataAsync(game.player1AccountID);
+                            Data.Player player2 = await GetPlayerDataAsync(game.player2AccountID);
+
+
+                            if(player1.inGame == 0)
+                            {
+                                if(player1.isOnline == 1)
+                                {
+                                    string update_query = String.Format("UPDATE games SET game_result = {0}, player1_status = {1} WHERE id = {2};", (int)Data.GameResultID.P1_LEFT, (int)Data.PlayerStatus.LEFT, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+                                }
+                                else
+                                {
+                                    string update_query = String.Format("UPDATE games SET player1_status = {0} WHERE id = {1};", (int)Data.PlayerStatus.DISCONNECTED, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+                                }
+                            }
+
+                            if (player2.inGame == 0)
+                            {
+                                if (player2.isOnline == 1)
+                                {
+                                    string update_query = String.Format("UPDATE games SET game_result = {0}, player2_status = {1} WHERE id = {2};", (int)Data.GameResultID.P2_LEFT, (int)Data.PlayerStatus.LEFT, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+                                }
+                                else
+                                {
+                                    string update_query = String.Format("UPDATE games SET player2_status = {0} WHERE id = {1};", (int)Data.PlayerStatus.DISCONNECTED, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+                                }
+                            }
+
+                            if (player1.hasCastle && !player2.hasCastle)
+                            {
+                                string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P1_WON, game.gameID);
+                                using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                {
+                                    update_command.ExecuteNonQuery();
+                                }
+                            }
+
+                            if(!player1.hasCastle && player2.hasCastle)
+                            {
+                                string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P2_WON, game.gameID);
+                                using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                {
+                                    update_command.ExecuteNonQuery();
+                                }
+                            }
+
+                            if(game.player1Status == Data.PlayerStatus.LEFT && game.player2Status == Data.PlayerStatus.LEFT)
+                            {
+                                string delete_query = String.Format("DELETE from hex_grid WHERE id = {0};", game.gameID);
+                                using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
+                                {
+                                    delete_command.ExecuteNonQuery();
+                                }
+
+                                delete_query = String.Format("DELETE from units WHERE id = {0};", game.gameID);
+                                using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
+                                {
+                                    delete_command.ExecuteNonQuery();
+                                }
+
+                                activeGames.Remove(game);
+                            }
+                        }
+                    }
+                                       
+
+                    connection.Close();
+                }
+                return true;
+            });
+            return await task;
+        }
+
 
 
         private async static Task<List<Data.HexTile>> FindPath(long gameID, int startTile_x, int startTile_y, int targetTile_x, int targetTile_y)
@@ -2698,6 +2959,70 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 return new List<Data.HexTile>(); // Return an empty path if no path is found
             });
             return await task;
+        }
+
+        private static Data.PathNode FindPathOrClosestObstacle(Data.HexGrid hexGrid, int startTile_x, int startTile_y, int targetTile_x, int targetTile_y)
+        {
+            
+            Data.PathNode[,] pathGrid = new Data.PathNode[hexGrid.rows, hexGrid.columns];
+
+            foreach (Data.HexTile hexTile in hexGrid.hexTiles)
+            {
+                Data.PathNode pathNode = new Data.PathNode(hexTile);
+                pathGrid[hexTile.x, hexTile.y] = pathNode;
+            }
+
+            Data.PathNode startNode = pathGrid[startTile_x, startTile_y];
+            Data.PathNode targetNode = pathGrid[targetTile_x, targetTile_y];
+            Data.PathNode closestObstacle = null;
+            int closestDistance = int.MaxValue;
+
+            List<Data.PathNode> openSet = new List<Data.PathNode> { startNode };
+            HashSet<Data.PathNode> closedSet = new HashSet<Data.PathNode>();
+
+            while (openSet.Count > 0)
+            {
+                Data.PathNode currentNode = openSet.OrderBy(node => node.FCost).ThenBy(node => node.hCost).First();
+                openSet.Remove(currentNode);
+                closedSet.Add(currentNode);
+
+                if (currentNode == targetNode)
+                {
+                    return targetNode; // Path found
+                }
+
+                foreach (Data.PathNode neighbor in GetPathNeighbors(pathGrid, currentNode, hexGrid.rows, hexGrid.columns))
+                {
+                    if (!neighbor.IsWalkable() || closedSet.Contains(neighbor))
+                    {
+                        if (neighbor.tile.hexType == 1 || neighbor.tile.hexType == 2)
+                        {
+                            int distance = GetDistance(neighbor, targetNode);
+                            if (distance < closestDistance)
+                            {
+                                closestObstacle = neighbor;
+                                closestDistance = distance;
+                            }
+                        }
+                        continue;
+                    }
+
+                    int newCostToNeighbor = currentNode.gCost + GetDistance(currentNode, neighbor);
+                    if (newCostToNeighbor < neighbor.gCost || !openSet.Contains(neighbor))
+                    {
+                        neighbor.gCost = newCostToNeighbor;
+                        neighbor.hCost = GetDistance(neighbor, targetNode);
+                        neighbor.cameFromNode = currentNode;
+
+                        if (!openSet.Contains(neighbor))
+                        {
+                            openSet.Add(neighbor);
+                        }
+                    }
+                }
+            }
+
+            return closestObstacle; // No path found, return closest obstacle
         }
 
         private static List<Data.PathNode> GetPathNeighbors(Data.PathNode[,] pathGrid, Data.PathNode node, int height, int width)
@@ -2826,11 +3151,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
+
         public async static void BattleManager()
         {
             await BattleManagerAsync();
         }
-
 
         public async static Task<bool> BattleManagerAsync()
         {
@@ -2990,13 +3315,22 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                                     long attackerAccountID = defendingArmyCamp.attackerAccountID;
 
+                                    Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
+
+                                    bool isAttackingCastle = false;
+
+                                    if(defendingArmyCamp.x == defender.castle_x && defendingArmyCamp.y == defender.castle_y)
+                                    {
+                                        isAttackingCastle = true;
+                                    }
+
                                     if (defendingUnits.Count > 0)
                                     {
 
-                                        Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
+                                        //Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
 
 
-                                        await Battle(attacker, defender, attackingArmyCamp, defendingArmyCamp, attackingUnits, defendingUnits);
+                                        await Battle(attacker, defender, attackingArmyCamp, defendingArmyCamp, attackingUnits, defendingUnits, isAttackingCastle);
                                     }
                                     else
                                     {
@@ -3017,6 +3351,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                         await UpdateBuildingsAndPlayerProduction(defendingArmyCamp.accountID);
                                         await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, attackingUnits);
                                         await UpdateArmyCampStatsAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
+
+                                        if(isAttackingCastle == true)
+                                        {
+                                            await UpdateHasCastleAsync(defendingArmyCamp.accountID, 0, defendingArmyCamp.x, defendingArmyCamp.y);
+                                        }
                                     }
 
 
@@ -3035,7 +3374,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
-        private async static Task<bool> Battle(Data.Player attacker, Data.Player defender, Data.HexTile attackingArmyCamp, Data.HexTile defendingArmyCamp, List<Data.Unit> attackingUnits, List<Data.Unit> defendingUnits)
+        private async static Task<bool> Battle(Data.Player attacker, Data.Player defender, Data.HexTile attackingArmyCamp, Data.HexTile defendingArmyCamp, List<Data.Unit> attackingUnits, List<Data.Unit> defendingUnits, bool isAttackingCastle)
         {
             Task<bool> task = Task.Run(async () =>
             {                
@@ -3048,27 +3387,26 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
 
 
-
                     if(defender.isPlayer1 == 1)
                     {
-                        if(defender.castle_x == defendingArmyCamp.x && defender.castle_y == defendingArmyCamp.y)
+                        if(isAttackingCastle)
+                        {
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_CASTLE_UNDER_ATTACK);
+                        }
+                        else
+                        {
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP_UNDER_ATTACK);
+                        }
+                    }
+                    else
+                    {
+                        if (isAttackingCastle)
                         {
                             await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_CASTLE_UNDER_ATTACK);
                         }
                         else
                         {
                             await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP_UNDER_ATTACK);
-                        }
-                    }
-                    else
-                    {
-                        if (defender.castle_x == defendingArmyCamp.x && defender.castle_y == defendingArmyCamp.y)
-                        {
-                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_CASTLE_UNDER_ATTACK);
-                        }
-                        else
-                        {
-                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP_UNDER_ATTACK);
                         }
                     }                    
 
@@ -3094,6 +3432,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         await UpdateBuildingsAndPlayerProduction(defenderAccountID);
                         await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, attackingUnits);
                         await UpdateArmyCampStatsAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
+
+                        if (isAttackingCastle == true)
+                        {
+                            await UpdateHasCastleAsync(defendingArmyCamp.accountID, 0, defendingArmyCamp.x, defendingArmyCamp.y);
+                        }
                     }
                     else // defenders won
                     {
@@ -3118,16 +3461,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-
         private async static Task<int> BattleResult(List<Data.Unit> attackingUnits, List<Data.Unit> defendingUnits)
         {
             Task<int> task = Task.Run(async () =>
             {
-                int result = 0; // the result of the battle: 0 for attackers, 1 for defenders
-                float gameTick = 1f / 5; // 5 ticks per second
-                int[] teamToAttackFirstDynamicWeights = new int[] { 50, 50 }; // first value is for attackers and second for defenders
-                int[] attackersDynamicDamageWeights = new int[] { 50, 25, 25 }; // dynamic weights of attackers for dealing damage
-                int[] defendersDynamicDamageWeights = new int[] { 50, 25, 25 }; // dynamic weights of defenders for dealing damage
+                int result = 0;
+                float gameTick = 1f / 5;
+                int[] teamToAttackFirstDynamicWeights = new int[] { 50, 50 };
+                int[] attackersDynamicDamageWeights = new int[] { 50, 25, 25 };
+                int[] defendersDynamicDamageWeights = new int[] { 50, 25, 25 }; 
 
 
                 while(attackingUnits.Count > 0 && defendingUnits.Count > 0)
@@ -3292,24 +3634,19 @@ namespace DevelopersHub.RealtimeNetworking.Server
         }
 
 
+
         public async static void LeaveMatch(int id, long accountID)
         {
             int response = await LeaveMatchAsync(id, accountID);
 
-
             Packet packet = new Packet();
-
             packet.Write((int)Terminal.RequestsID.LEAVE_MATCH);
             packet.Write(response);
-
             Sender.TCP_Send(id, packet);
         }
 
         private async static Task<int> LeaveMatchAsync(int id, long accountID)
         {            
-
-            Console.WriteLine("ID-ul jucatorului care paraseste meciul este: " + accountID);
-
             Task<int> task = Task.Run(() =>
             {
                 int response = 0;
