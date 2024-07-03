@@ -15,8 +15,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             public long accountID = -1;
             public string username = "username";
 
-            public int victories = 0;
-            public int rank = 0;
+            public int victories = -1;
+            public int rank = -1;
 
             public int gold = 100;
             public int gems = 10;
@@ -198,8 +198,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             IN_GAME = 0,
             LEFT = 1,
-            DISCONNECTED = 2
-
+            DISCONNECTED = 2,
+            CASTLE_DESTROYED = 3
         }
 
         public enum GameResultID

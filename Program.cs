@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using MySql.Data.MySqlClient;
 
 namespace DevelopersHub.RealtimeNetworking.Server
 {
@@ -21,11 +22,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
         private static void MainThread()
         {
             DateTime nextLoop = DateTime.Now;
+
+            MySqlConnection connection = Database.GetMySqlConnection();
+
             while (isRunning)
             {
                 while (nextLoop < DateTime.Now)
                 {
-                    Terminal.Update();
+                    Terminal.Update(connection);
                     Threading.UpdateMain();
                     nextLoop = nextLoop.AddMilliseconds(updatePeriod);
                     if (nextLoop > DateTime.Now)

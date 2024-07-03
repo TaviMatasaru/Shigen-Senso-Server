@@ -63,19 +63,22 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         private static DateTime collectTime = DateTime.Now;        
 
-        public static void Update()
+        public static async void Update(MySqlConnection connection)
         {
             double deltaTime = (DateTime.Now - collectTime).TotalSeconds;
 
-            if((DateTime.Now - collectTime).TotalSeconds >= 1f)
+            if((DateTime.Now - collectTime).TotalSeconds >= 1.2f)
             {
-                collectTime = DateTime.Now;
-                CollectResources();
-                UpdateUnitTraining(deltaTime);
-                UpdateUnitsCoords();
-                GameMaker();
-                GameManager();
-                BattleManager();
+                collectTime = DateTime.Now;                
+
+                
+                    await CollectResourcesAsync(connection);
+                    await UpdateUnitTrainingAsync(connection, deltaTime);
+                    await UpdateUnitsCoordsAsync(connection);
+                    await GameMakerAsync(connection);
+                    await GameManagerAsync(connection);
+                    await BattleManagerAsync(connection);
+                                                  
             }
         }
 
@@ -402,7 +405,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle, is_online, is_searching, in_game, game_id, is_player_1, castle_x, castle_y FROM accounts WHERE id = '{0}';", accountID);
+                    string select_query = String.Format("SELECT id, username, victories, rank, gold, gems, stone, wood, food, stone_production, wood_production, food_production, has_castle, is_online, is_searching, in_game, game_id, is_player_1, castle_x, castle_y FROM accounts WHERE id = '{0}';", accountID);
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -411,7 +414,10 @@ namespace DevelopersHub.RealtimeNetworking.Server
                             {
                                 while (reader.Read())
                                 {
-                                    //data.id = long.Parse(reader["id"].ToString());
+                                    data.accountID = long.Parse(reader["id"].ToString());
+                                    data.username = reader["username"].ToString();
+                                    data.victories = int.Parse(reader["victories"].ToString());
+                                    data.rank = int.Parse(reader["rank"].ToString());
                                     data.gold = int.Parse(reader["gold"].ToString());
                                     data.gems = int.Parse(reader["gems"].ToString());
                                     data.stone = int.Parse(reader["stone"].ToString());
@@ -2069,25 +2075,21 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
-        private async static void CollectResources()
+        private async static void CollectResources(MySqlConnection connection)
         {
-            await CollectResourcesAsync();
+            await CollectResourcesAsync(connection);
         }
 
-        private async static Task<bool> CollectResourcesAsync()
+        private async static Task<bool> CollectResourcesAsync(MySqlConnection connection)
         { 
             Task<bool> task = Task.Run(() =>
-            {
-                using (MySqlConnection connection = GetMySqlConnection())
-                {
+            {                                
                     string update_query = String.Format("UPDATE accounts SET stone = stone + stone_production, wood = wood + wood_production, food = food + food_production;");
                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                     {
                         update_command.ExecuteNonQuery();
-                    }
-                    connection.Close();
-                    return true;                    
-                }
+                    }                    
+                    return true;                                    
             });
             return await task;
         }
@@ -2378,17 +2380,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
       
 
 
-        private async static void UpdateUnitTraining(double  deltaTime)
+        private async static void UpdateUnitTraining(MySqlConnection connection, double  deltaTime)
         {
-            await UpdateUnitTrainingAsync(deltaTime);
+            await UpdateUnitTrainingAsync(connection, deltaTime);
         }
 
-        private async static Task<bool> UpdateUnitTrainingAsync(double deltaTime)
+        private async static Task<bool> UpdateUnitTrainingAsync(MySqlConnection connection, double deltaTime)
         {
             Task<bool> task = Task.Run(() =>
-            {
-                using (MySqlConnection connection = GetMySqlConnection())
-                {
+            {                
                     string query = String.Format("UPDATE units LEFT JOIN server_units ON units.global_id = server_units.global_id AND units.level = server_units.level SET units.trained = 1 WHERE units.trained_time >= server_units.train_time");
                     using (MySqlCommand command = new MySqlCommand(query, connection))
                     {
@@ -2400,32 +2400,28 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         command.ExecuteNonQuery();
                     }
-                    connection.Close();
-                }
+                   
                 return true;
             });
             return await task;
         }
      
 
-        private async static void UpdateUnitsCoords()
+        private async static void UpdateUnitsCoords(MySqlConnection connection)
         {
-            await UpdateUnitsCoordsAsync();            
+            await UpdateUnitsCoordsAsync(connection);            
         }
 
-        private async static Task<bool> UpdateUnitsCoordsAsync()
+        private async static Task<bool> UpdateUnitsCoordsAsync(MySqlConnection connection)
         {
             Task<bool> task = Task.Run(() =>
-            {                
-                using (MySqlConnection connection = GetMySqlConnection())
-                {
+            {                                
                     string query = String.Format("UPDATE units SET current_x = target_x, current_y = target_y WHERE ready_player1 = 1 AND ready_player2 = 1;");
                     using (MySqlCommand command = new MySqlCommand(query, connection))
                     {
                         command.ExecuteNonQuery();
                     }
-                    connection.Close();
-                }                
+                                
                 return true;
             });
             return await task;
@@ -2658,158 +2654,156 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
 
 
-        private async static void GameMaker()
+        private async static void GameMaker(MySqlConnection connection)
         {
-            await GameMakerAsync();
+            await GameMakerAsync(connection);
         }
 
-        private async static Task<bool> GameMakerAsync()
+        private async static Task<bool> GameMakerAsync(MySqlConnection connection)
         {
             Task<bool> task = Task.Run(async () =>
             {
                 List<long> accounts = new List<long>();
-
-                using (MySqlConnection connection = GetMySqlConnection())
+                
+                string select_query = String.Format("SELECT id FROM accounts WHERE is_searching = 1 AND in_game = 0");
+                using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                 {
-                    string select_query = String.Format("SELECT id FROM accounts WHERE is_searching = 1 AND in_game = 0");
-                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    using (MySqlDataReader reader = select_command.ExecuteReader())
                     {
-                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        if (reader.HasRows)
                         {
-                            if (reader.HasRows)
+                            while (reader.Read())
                             {
-                                while (reader.Read())
-                                {
-                                    long accountID = long.Parse(reader["id"].ToString());
+                                long accountID = long.Parse(reader["id"].ToString());
 
-                                    accounts.Add(accountID);
-                                }
+                                accounts.Add(accountID);
                             }
                         }
-                        
                     }
-                    if (accounts.Count >= 2)
-                    {
-                        long gameID;
-                        Random random = new Random();
-                        int account1_index = random.Next(accounts.Count);
-                        int account2_index = random.Next(accounts.Count);
+                        
+                }
+                if (accounts.Count >= 2)
+                {
+                    long gameID;
+                    Random random = new Random();
+                    int account1_index = random.Next(accounts.Count);
+                    int account2_index = random.Next(accounts.Count);
 
-                        if( account1_index == account2_index)
-                        {
-                            while (account1_index == account2_index)
-                            {                               
-                                account2_index = random.Next(accounts.Count);
-                            }
+                    if( account1_index == account2_index)
+                    {
+                        while (account1_index == account2_index)
+                        {                               
+                            account2_index = random.Next(accounts.Count);
                         }
+                    }
 
 
                                             
-                        string insert_query = String.Format("INSERT INTO games (player1_id, player2_id, game_result, player1_status, player2_status) VALUES ({0}, {1}, {3}, {4}, {5});", accounts[account1_index], accounts[account2_index], (int)Data.GameResultID.NOT_OVER, Data.PlayerStatus.IN_GAME, Data.PlayerStatus.IN_GAME);
-                        using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
-                        {
-                            insert_command.ExecuteNonQuery();
-                            gameID = insert_command.LastInsertedId;
-                        }
-
-                        string updatePlayer1_query = String.Format("UPDATE accounts SET is_searching = 0, in_game = 1, game_id = {0}, is_player_1 = 1 WHERE id = {1}", gameID, accounts[account1_index]);
-                        using (MySqlCommand updatePlayer1_command = new MySqlCommand(updatePlayer1_query, connection))
-                        {
-                            updatePlayer1_command.ExecuteNonQuery();                            
-                        }
-
-                        string updatePlayer2_query = String.Format("UPDATE accounts SET is_searching = 0, in_game = 1, game_id = {0}, is_player_1 = 0 WHERE id = {1}", gameID, accounts[account2_index]);
-                        using (MySqlCommand updatePlayer2_command = new MySqlCommand(updatePlayer2_query, connection))
-                        {
-                            updatePlayer2_command.ExecuteNonQuery();
-                        }
-
-
-                        //TODO : Delete this 
-                        //string delete_query = String.Format("DELETE FROM hex_grid;");
-                        //using (MySqlCommand delete_grid_command = new MySqlCommand(delete_query, connection))
-                        //{
-                        //    delete_grid_command.ExecuteNonQuery();
-                        //}
-                        //delete_query = String.Format("DELETE FROM units;");
-                        //using (MySqlCommand delete_units_command = new MySqlCommand(delete_query, connection))
-                        //{
-                        //    delete_units_command.ExecuteNonQuery();
-                        //}
-
-                        await UpdateHasCastleAsync(accounts[account1_index], 0, 0, 0);
-                        await UpdatePlayerResourcesAsync(accounts[account1_index], 10, 100, 3000, 3000, 3000);
-
-                        await UpdateHasCastleAsync(accounts[account2_index], 0, 0, 0);
-                        await UpdatePlayerResourcesAsync(accounts[account2_index], 10, 100, 3000, 3000, 3000);
-
-                        await GenerateGridAsync(gameID);
+                    string insert_query = String.Format("INSERT INTO games (player1_id, player2_id, game_result, player1_status, player2_status) VALUES ({0}, {1}, {2}, {3}, {4});", accounts[account1_index], accounts[account2_index], (int)Data.GameResultID.NOT_OVER, (int)Data.PlayerStatus.IN_GAME, (int)Data.PlayerStatus.IN_GAME);
+                    using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
+                    {
+                        insert_command.ExecuteNonQuery();
+                        gameID = insert_command.LastInsertedId;
                     }
-                    connection.Close();
+
+                    string updatePlayer1_query = String.Format("UPDATE accounts SET is_searching = 0, in_game = 1, game_id = {0}, is_player_1 = 1 WHERE id = {1}", gameID, accounts[account1_index]);
+                    using (MySqlCommand updatePlayer1_command = new MySqlCommand(updatePlayer1_query, connection))
+                    {
+                        updatePlayer1_command.ExecuteNonQuery();                            
+                    }
+
+                    string updatePlayer2_query = String.Format("UPDATE accounts SET is_searching = 0, in_game = 1, game_id = {0}, is_player_1 = 0 WHERE id = {1}", gameID, accounts[account2_index]);
+                    using (MySqlCommand updatePlayer2_command = new MySqlCommand(updatePlayer2_query, connection))
+                    {
+                        updatePlayer2_command.ExecuteNonQuery();
+                    }
+
+
+                    //TODO : Delete this 
+                    //string delete_query = String.Format("DELETE FROM hex_grid;");
+                    //using (MySqlCommand delete_grid_command = new MySqlCommand(delete_query, connection))
+                    //{
+                    //    delete_grid_command.ExecuteNonQuery();
+                    //}
+                    //delete_query = String.Format("DELETE FROM units;");
+                    //using (MySqlCommand delete_units_command = new MySqlCommand(delete_query, connection))
+                    //{
+                    //    delete_units_command.ExecuteNonQuery();
+                    //}
+
+                    await UpdateHasCastleAsync(accounts[account1_index], 0, 0, 0);
+                    await UpdatePlayerResourcesAsync(accounts[account1_index], 10, 100, 3000, 3000, 3000);
+
+                    await UpdateHasCastleAsync(accounts[account2_index], 0, 0, 0);
+                    await UpdatePlayerResourcesAsync(accounts[account2_index], 10, 100, 3000, 3000, 3000);
+
+                    await GenerateGridAsync(gameID);
                 }
+                
                 return true;
             });
             return await task;
         }
 
-        private async static void GameManager()
+        private async static void GameManager(MySqlConnection connection)
         {
-            await GameManagerAsync();
+            await GameManagerAsync(connection);
         }
 
-        private async static Task<bool> GameManagerAsync()
+        private async static Task<bool> GameManagerAsync(MySqlConnection connection)
         {
             Task<bool> task = Task.Run(async () =>
             {                
-                using (MySqlConnection connection = GetMySqlConnection())
+                
+                List<Data.GameData> activeGames = new List<Data.GameData>();
+                List<Data.GameData> finishedGames = new List<Data.GameData>();
+
+                string select_query = String.Format("SELECT id, player1_id, player2_id, game_result, player1_status, player2_status FROM games;", (int)Data.GameResultID.NOT_OVER);
+                using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                 {
-                    List<Data.GameData> activeGames = new List<Data.GameData>();
-
-                    string select_query = String.Format("SELECT id, player1_id, player2_id, game_result, player1_status, player2_status FROM games WHERE game_result = {0};", (int)Data.GameResultID.NOT_OVER);
-                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                    using (MySqlDataReader reader = select_command.ExecuteReader())
                     {
-                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        if (reader.HasRows)
                         {
-                            if (reader.HasRows)
+                            while (reader.Read())
                             {
-                                while (reader.Read())
-                                {
-                                    Data.GameData game = new Data.GameData();
+                                Data.GameData game = new Data.GameData();
                                     
-                                    long.TryParse(reader["id"].ToString(), out game.gameID);
-                                    long.TryParse(reader["player1_id"].ToString(), out game.player1AccountID);
-                                    long.TryParse(reader["player2_id"].ToString(), out game.player2AccountID);
+                                long.TryParse(reader["id"].ToString(), out game.gameID);
+                                long.TryParse(reader["player1_id"].ToString(), out game.player1AccountID);
+                                long.TryParse(reader["player2_id"].ToString(), out game.player2AccountID);
 
 
-                                    int gameResult = -1;
-                                    int.TryParse(reader["game_result"].ToString(), out gameResult);
-                                    game.gameResult = (Data.GameResultID)gameResult;
+                                int gameResult = -1;
+                                int.TryParse(reader["game_result"].ToString(), out gameResult);
+                                game.gameResult = (Data.GameResultID)gameResult;
 
-                                    int playerStatus = -1;
-                                    int.TryParse(reader["player1_status"].ToString(), out playerStatus);
-                                    game.player1Status = (Data.PlayerStatus)playerStatus;
+                                int playerStatus = -1;
+                                int.TryParse(reader["player1_status"].ToString(), out playerStatus);
+                                game.player1Status = (Data.PlayerStatus)playerStatus;
 
-                                    playerStatus = -1;
-                                    int.TryParse(reader["player2_status"].ToString(), out playerStatus);
-                                    game.player2Status = (Data.PlayerStatus)playerStatus;
+                                playerStatus = -1;
+                                int.TryParse(reader["player2_status"].ToString(), out playerStatus);
+                                game.player2Status = (Data.PlayerStatus)playerStatus;
 
-                                    activeGames.Add(game);
-                                }
+                                activeGames.Add(game);
                             }
                         }
                     }
+                }
 
-                    if(activeGames.Count > 0)
+                if(activeGames.Count > 0)
+                {
+                    foreach (Data.GameData game in activeGames)
                     {
-                        foreach (Data.GameData game in activeGames)
+                        Data.Player player1 = await GetPlayerDataAsync(game.player1AccountID);
+                        Data.Player player2 = await GetPlayerDataAsync(game.player2AccountID);
+
+                        if(game.gameResult == Data.GameResultID.NOT_OVER)
                         {
-                            Data.Player player1 = await GetPlayerDataAsync(game.player1AccountID);
-                            Data.Player player2 = await GetPlayerDataAsync(game.player2AccountID);
-
-
-                            if(player1.inGame == 0)
+                            if (player1.inGame == 0)
                             {
-                                if(player1.isOnline == 1)
+                                if (player1.isOnline == 1)
                                 {
                                     string update_query = String.Format("UPDATE games SET game_result = {0}, player1_status = {1} WHERE id = {2};", (int)Data.GameResultID.P1_LEFT, (int)Data.PlayerStatus.LEFT, game.gameID);
                                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
@@ -2847,25 +2841,30 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 }
                             }
 
-                            if (player1.hasCastle && !player2.hasCastle)
+                            if (player1.inGame == 1 && player2.inGame == 1)
                             {
-                                string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P1_WON, game.gameID);
-                                using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                if (game.player1Status == Data.PlayerStatus.CASTLE_DESTROYED)
                                 {
-                                    update_command.ExecuteNonQuery();
+                                    string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P2_WON, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+                                }
+
+                                if (game.player2Status == Data.PlayerStatus.CASTLE_DESTROYED)
+                                {
+                                    string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P1_WON, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
                                 }
                             }
-
-                            if(!player1.hasCastle && player2.hasCastle)
-                            {
-                                string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P2_WON, game.gameID);
-                                using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
-                                {
-                                    update_command.ExecuteNonQuery();
-                                }
-                            }
-
-                            if(game.player1Status == Data.PlayerStatus.LEFT && game.player2Status == Data.PlayerStatus.LEFT)
+                        }
+                        else
+                        {
+                            if (game.player1Status == Data.PlayerStatus.LEFT && game.player2Status == Data.PlayerStatus.LEFT)
                             {
                                 string delete_query = String.Format("DELETE from hex_grid WHERE id = {0};", game.gameID);
                                 using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
@@ -2879,14 +2878,20 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     delete_command.ExecuteNonQuery();
                                 }
 
+                                delete_query = String.Format("DETELE FROM games WHERE id = {0};", game.gameID);
+                                using (MySqlCommand delete_command = new MySqlCommand(delete_query, connection))
+                                {
+                                    delete_command.ExecuteNonQuery();
+                                }
                                 activeGames.Remove(game);
                             }
                         }
-                    }
-                                       
 
-                    connection.Close();
-                }
+                       
+                                                                
+                    }
+                }             
+
                 return true;
             });
             return await task;
@@ -3152,220 +3157,233 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
 
 
-        public async static void BattleManager()
+        public async static void BattleManager(MySqlConnection connection)
         {
-            await BattleManagerAsync();
+            await BattleManagerAsync(connection);
         }
 
-        public async static Task<bool> BattleManagerAsync()
+        public async static Task<bool> BattleManagerAsync(MySqlConnection connection)
         {
             Task<bool> task = Task.Run(async () =>
             {                
-                using (MySqlConnection connection = GetMySqlConnection())
-                {
-                    List<Data.HexTile> defendingArmyCamps = new List<Data.HexTile>();
+                
+                List<Data.HexTile> defendingArmyCamps = new List<Data.HexTile>();
                    
-                    string select_query = String.Format("SELECT game_id, account_id, x, y, hex_type, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack, attacker_account_id FROM hex_grid WHERE is_defending = 1;");
-                    using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                string select_query = String.Format("SELECT game_id, account_id, x, y, hex_type, health, capacity, attack, defense, is_attacking, is_defending, is_under_attack, attacker_account_id FROM hex_grid WHERE is_defending = 1;");
+                using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
+                {
+                    using (MySqlDataReader reader = select_command.ExecuteReader())
                     {
-                        using (MySqlDataReader reader = select_command.ExecuteReader())
+                        if (reader.HasRows)
                         {
-                            if (reader.HasRows)
+                            while (reader.Read())
                             {
-                                while (reader.Read())
-                                {
-                                    Data.HexTile tile = new Data.HexTile();
+                                Data.HexTile tile = new Data.HexTile();
 
-                                    tile.gameID = long.Parse(reader["game_id"].ToString());
-                                    tile.accountID = long.Parse(reader["account_id"].ToString());
-                                    tile.attackerAccountID = long.Parse(reader["attacker_account_id"].ToString());
-                                    tile.x = int.Parse(reader["x"].ToString());
-                                    tile.y = int.Parse(reader["y"].ToString());
-                                    tile.hexType = int.Parse(reader["hex_type"].ToString());                                    
-                                    tile.health = int.Parse(reader["health"].ToString());
-                                    tile.capacity = int.Parse(reader["capacity"].ToString());
-                                    tile.attack = int.Parse(reader["attack"].ToString());
-                                    tile.defense = int.Parse(reader["defense"].ToString());
+                                tile.gameID = long.Parse(reader["game_id"].ToString());
+                                tile.accountID = long.Parse(reader["account_id"].ToString());
+                                tile.attackerAccountID = long.Parse(reader["attacker_account_id"].ToString());
+                                tile.x = int.Parse(reader["x"].ToString());
+                                tile.y = int.Parse(reader["y"].ToString());
+                                tile.hexType = int.Parse(reader["hex_type"].ToString());                                    
+                                tile.health = int.Parse(reader["health"].ToString());
+                                tile.capacity = int.Parse(reader["capacity"].ToString());
+                                tile.attack = int.Parse(reader["attack"].ToString());
+                                tile.defense = int.Parse(reader["defense"].ToString());
 
 
-                                    int isTrue = 0;
-                                    int.TryParse(reader["is_attacking"].ToString(), out isTrue);
-                                    tile.isAttacking = isTrue > 0;
+                                int isTrue = 0;
+                                int.TryParse(reader["is_attacking"].ToString(), out isTrue);
+                                tile.isAttacking = isTrue > 0;
 
-                                    isTrue = 0;
-                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
-                                    tile.isDefending = isTrue > 0;
+                                isTrue = 0;
+                                int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                tile.isDefending = isTrue > 0;
 
-                                    isTrue = 0;
-                                    int.TryParse(reader["is_under_attack"].ToString(), out isTrue);
-                                    tile.isUnderAttack = isTrue > 0;
+                                isTrue = 0;
+                                int.TryParse(reader["is_under_attack"].ToString(), out isTrue);
+                                tile.isUnderAttack = isTrue > 0;
 
 
-                                    defendingArmyCamps.Add(tile);
-                                }
+                                defendingArmyCamps.Add(tile);
                             }
                         }
                     }
+                }
 
-                    if(defendingArmyCamps.Count > 0)
+                if(defendingArmyCamps.Count > 0)
+                {
+                    foreach (Data.HexTile defendingArmyCamp in defendingArmyCamps)
                     {
-                        foreach (Data.HexTile defendingArmyCamp in defendingArmyCamps)
+                        List<Data.Unit> attackingUnits = new List<Data.Unit>();
+
+                        string selectUnits_query = String.Format("SELECT id, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, is_player1_unit, health, damage, def_damage, is_defending FROM units WHERE game_id = {0} AND target_x = {1} AND target_y = {2} AND is_defending = 0;", defendingArmyCamp.gameID, defendingArmyCamp.x, defendingArmyCamp.y);
+                        using (MySqlCommand selectUnits_command = new MySqlCommand(selectUnits_query, connection))
                         {
-                            List<Data.Unit> attackingUnits = new List<Data.Unit>();
-
-                            string selectUnits_query = String.Format("SELECT id, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, is_player1_unit, health, damage, def_damage, is_defending FROM units WHERE game_id = {0} AND target_x = {1} AND target_y = {2} AND is_defending = 0;", defendingArmyCamp.gameID, defendingArmyCamp.x, defendingArmyCamp.y);
-                            using (MySqlCommand selectUnits_command = new MySqlCommand(selectUnits_query, connection))
+                            using (MySqlDataReader reader = selectUnits_command.ExecuteReader())
                             {
-                                using (MySqlDataReader reader = selectUnits_command.ExecuteReader())
+                                if (reader.HasRows)
                                 {
-                                    if (reader.HasRows)
+                                    while (reader.Read())
                                     {
-                                        while (reader.Read())
-                                        {
-                                            Data.Unit unit = new Data.Unit();
+                                        Data.Unit unit = new Data.Unit();
 
-                                            long.TryParse(reader["id"].ToString(), out unit.databaseID);
-                                            long.TryParse(reader["account_id"].ToString(), out unit.accountID);                                            
-                                            int.TryParse(reader["game_id"].ToString(), out unit.gameID);
-                                            int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
-                                            int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
-                                            int.TryParse(reader["current_x"].ToString(), out unit.current_x);
-                                            int.TryParse(reader["current_y"].ToString(), out unit.current_y);
-                                            int.TryParse(reader["target_x"].ToString(), out unit.target_x);
-                                            int.TryParse(reader["target_y"].ToString(), out unit.target_y);
-                                            int.TryParse(reader["health"].ToString(), out unit.health);
-                                            int.TryParse(reader["damage"].ToString(), out unit.damage);
-                                            int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
+                                        long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                        long.TryParse(reader["account_id"].ToString(), out unit.accountID);                                            
+                                        int.TryParse(reader["game_id"].ToString(), out unit.gameID);
+                                        int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                        int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                        int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                        int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                        int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                        int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                        int.TryParse(reader["health"].ToString(), out unit.health);
+                                        int.TryParse(reader["damage"].ToString(), out unit.damage);
+                                        int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
 
 
-                                            int isTrue = 0;
-                                            int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
-                                            unit.isPlayer1Unit = isTrue > 0;
+                                        int isTrue = 0;
+                                        int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                        unit.isPlayer1Unit = isTrue > 0;
 
-                                            isTrue = 0;
-                                            int.TryParse(reader["is_defending"].ToString(), out isTrue);
-                                            unit.isDefending = isTrue > 0;
+                                        isTrue = 0;
+                                        int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                        unit.isDefending = isTrue > 0;
 
-                                            attackingUnits.Add(unit);
-                                        }
+                                        attackingUnits.Add(unit);
                                     }
+                                }
 
+                            }
+                        }
+
+                        if(attackingUnits.Count > 0)
+                        {
+                            bool canStartBattle = true;
+
+                            foreach (Data.Unit unit in attackingUnits)
+                            {
+                                if (unit.current_x != unit.target_x || unit.current_y != unit.target_y)
+                                {
+                                    canStartBattle = false;
+                                    break;
                                 }
                             }
 
-                            if(attackingUnits.Count > 0)
+                            if (canStartBattle)
                             {
-                                bool canStartBattle = true;
+                                Data.HexTile attackingArmyCamp = await GetArmyCampDataAsync(attackingUnits[0].gameID, attackingUnits[0].armyCamp_x, attackingUnits[0].armyCamp_y);
+                                List<Data.Unit> defendingUnits = new List<Data.Unit>();
 
-                                foreach (Data.Unit unit in attackingUnits)
+                                string selectDefendingUnits_query = String.Format("SELECT id, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, is_player1_unit, health, damage, def_damage, is_defending FROM units WHERE game_id = {0} AND army_camp_x = {1} AND army_camp_y = {2} AND is_defending = 1;", defendingArmyCamp.gameID, defendingArmyCamp.x, defendingArmyCamp.y);
+                                using (MySqlCommand selectDefendingUnits_command = new MySqlCommand(selectDefendingUnits_query, connection))
                                 {
-                                    if (unit.current_x != unit.target_x || unit.current_y != unit.target_y)
+                                    using (MySqlDataReader reader = selectDefendingUnits_command.ExecuteReader())
                                     {
-                                        canStartBattle = false;
-                                        break;
+                                        if (reader.HasRows)
+                                        {
+                                            while (reader.Read())
+                                            {
+                                                Data.Unit unit = new Data.Unit();
+
+                                                long.TryParse(reader["id"].ToString(), out unit.databaseID);
+                                                int.TryParse(reader["game_id"].ToString(), out unit.gameID);
+                                                long.TryParse(reader["account_id"].ToString(), out unit.accountID);
+                                                int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
+                                                int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
+                                                int.TryParse(reader["current_x"].ToString(), out unit.current_x);
+                                                int.TryParse(reader["current_y"].ToString(), out unit.current_y);
+                                                int.TryParse(reader["target_x"].ToString(), out unit.target_x);
+                                                int.TryParse(reader["target_y"].ToString(), out unit.target_y);
+                                                int.TryParse(reader["health"].ToString(), out unit.health);
+                                                int.TryParse(reader["damage"].ToString(), out unit.damage);
+                                                int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
+
+
+                                                int isTrue = 0;
+                                                int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
+                                                unit.isPlayer1Unit = isTrue > 0;
+
+                                                isTrue = 0;
+                                                int.TryParse(reader["is_defending"].ToString(), out isTrue);
+                                                unit.isDefending = isTrue > 0;
+
+                                                defendingUnits.Add(unit);
+                                            }
+                                        }
+
                                     }
                                 }
 
-                                if (canStartBattle)
+                                Data.Player attacker = await GetPlayerDataAsync(defendingArmyCamp.attackerAccountID);
+
+                                long attackerAccountID = defendingArmyCamp.attackerAccountID;
+
+                                Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
+
+                                bool isAttackingCastle = false;
+
+                                if(defendingArmyCamp.x == defender.castle_x && defendingArmyCamp.y == defender.castle_y)
                                 {
-                                    Data.HexTile attackingArmyCamp = await GetArmyCampDataAsync(attackingUnits[0].gameID, attackingUnits[0].armyCamp_x, attackingUnits[0].armyCamp_y);
-                                    List<Data.Unit> defendingUnits = new List<Data.Unit>();
+                                    isAttackingCastle = true;
+                                }
 
-                                    string selectDefendingUnits_query = String.Format("SELECT id, game_id, account_id, army_camp_x, army_camp_y, current_x, current_y, target_x, target_y, is_player1_unit, health, damage, def_damage, is_defending FROM units WHERE game_id = {0} AND army_camp_x = {1} AND army_camp_y = {2} AND is_defending = 1;", defendingArmyCamp.gameID, defendingArmyCamp.x, defendingArmyCamp.y);
-                                    using (MySqlCommand selectDefendingUnits_command = new MySqlCommand(selectDefendingUnits_query, connection))
+                                if (defendingUnits.Count > 0)
+                                {
+
+                                    //Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
+
+
+                                    await Battle(attacker, defender, attackingArmyCamp, defendingArmyCamp, attackingUnits, defendingUnits, isAttackingCastle);
+                                }
+                                else
+                                {
+                                    if (attacker.isPlayer1 == 1)
                                     {
-                                        using (MySqlDataReader reader = selectDefendingUnits_command.ExecuteReader())
-                                        {
-                                            if (reader.HasRows)
-                                            {
-                                                while (reader.Read())
-                                                {
-                                                    Data.Unit unit = new Data.Unit();
-
-                                                    long.TryParse(reader["id"].ToString(), out unit.databaseID);
-                                                    int.TryParse(reader["game_id"].ToString(), out unit.gameID);
-                                                    long.TryParse(reader["account_id"].ToString(), out unit.accountID);
-                                                    int.TryParse(reader["army_camp_x"].ToString(), out unit.armyCamp_x);
-                                                    int.TryParse(reader["army_camp_y"].ToString(), out unit.armyCamp_y);
-                                                    int.TryParse(reader["current_x"].ToString(), out unit.current_x);
-                                                    int.TryParse(reader["current_y"].ToString(), out unit.current_y);
-                                                    int.TryParse(reader["target_x"].ToString(), out unit.target_x);
-                                                    int.TryParse(reader["target_y"].ToString(), out unit.target_y);
-                                                    int.TryParse(reader["health"].ToString(), out unit.health);
-                                                    int.TryParse(reader["damage"].ToString(), out unit.damage);
-                                                    int.TryParse(reader["def_damage"].ToString(), out unit.def_damage);
-
-
-                                                    int isTrue = 0;
-                                                    int.TryParse(reader["is_player1_unit"].ToString(), out isTrue);
-                                                    unit.isPlayer1Unit = isTrue > 0;
-
-                                                    isTrue = 0;
-                                                    int.TryParse(reader["is_defending"].ToString(), out isTrue);
-                                                    unit.isDefending = isTrue > 0;
-
-                                                    defendingUnits.Add(unit);
-                                                }
-                                            }
-
-                                        }
-                                    }
-
-                                    Data.Player attacker = await GetPlayerDataAsync(defendingArmyCamp.attackerAccountID);
-
-                                    long attackerAccountID = defendingArmyCamp.attackerAccountID;
-
-                                    Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
-
-                                    bool isAttackingCastle = false;
-
-                                    if(defendingArmyCamp.x == defender.castle_x && defendingArmyCamp.y == defender.castle_y)
-                                    {
-                                        isAttackingCastle = true;
-                                    }
-
-                                    if (defendingUnits.Count > 0)
-                                    {
-
-                                        //Data.Player defender = await GetPlayerDataAsync(defendingArmyCamp.accountID);
-
-
-                                        await Battle(attacker, defender, attackingArmyCamp, defendingArmyCamp, attackingUnits, defendingUnits, isAttackingCastle);
+                                        await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);                                            
                                     }
                                     else
                                     {
-                                        if (attacker.isPlayer1 == 1)
+                                        await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                                    }
+
+                                    await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
+                                    await UpdateHexTileIsDefendingAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                                    await UpdateHexTileIsUnderAttackAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
+                                    await UpdateArmyCampNeighboursAsync(defendingArmyCamp.gameID, attackerAccountID, attacker.isPlayer1, defendingArmyCamp);
+                                    await UpdateBuildingsAndPlayerProduction(attackerAccountID);
+                                    await UpdateBuildingsAndPlayerProduction(defendingArmyCamp.accountID);
+                                    await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, attackingUnits);
+                                    await UpdateArmyCampStatsAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
+
+                                    if(isAttackingCastle == true)
+                                    {
+                                        await UpdateHasCastleAsync(defendingArmyCamp.accountID, 0, defendingArmyCamp.x, defendingArmyCamp.y);
+
+                                        if(defender.isPlayer1 == 1)
                                         {
-                                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);                                            
+                                            string update_query = String.Format("UPDATE games SET player1_status = {0} WHERE id = {1};", (int)Data.PlayerStatus.CASTLE_DESTROYED, defendingArmyCamp.gameID);
+                                            using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                            {
+                                                update_command.ExecuteNonQuery();
+                                            }
                                         }
                                         else
                                         {
-                                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
-                                        }
-
-                                        await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
-                                        await UpdateHexTileIsDefendingAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
-                                        await UpdateHexTileIsUnderAttackAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
-                                        await UpdateArmyCampNeighboursAsync(defendingArmyCamp.gameID, attackerAccountID, attacker.isPlayer1, defendingArmyCamp);
-                                        await UpdateBuildingsAndPlayerProduction(attackerAccountID);
-                                        await UpdateBuildingsAndPlayerProduction(defendingArmyCamp.accountID);
-                                        await UpdateUnitArmyCampAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, attackingUnits);
-                                        await UpdateArmyCampStatsAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y);
-
-                                        if(isAttackingCastle == true)
-                                        {
-                                            await UpdateHasCastleAsync(defendingArmyCamp.accountID, 0, defendingArmyCamp.x, defendingArmyCamp.y);
+                                            string update_query = String.Format("UPDATE games SET player2_status = {0} WHERE id = {1};", (int)Data.PlayerStatus.CASTLE_DESTROYED, defendingArmyCamp.gameID);
+                                            using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                            {
+                                                update_command.ExecuteNonQuery();
+                                            }
                                         }
                                     }
-
-
                                 }
-                            }                            
-                        }
+
+
+                            }
+                        }                            
                     }
-                   
-                    connection.Close();
-                }
+                }                                       
 
                 return true;
             });
@@ -3436,6 +3454,23 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         if (isAttackingCastle == true)
                         {
                             await UpdateHasCastleAsync(defendingArmyCamp.accountID, 0, defendingArmyCamp.x, defendingArmyCamp.y);
+
+                            if (defender.isPlayer1 == 1)
+                            {
+                                string update_query = String.Format("UPDATE games SET player1_status = {0} WHERE id = {1};", (int)Data.PlayerStatus.CASTLE_DESTROYED, defendingArmyCamp.gameID);
+                                using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                {
+                                    update_command.ExecuteNonQuery();
+                                }
+                            }
+                            else
+                            {
+                                string update_query = String.Format("UPDATE games SET player2_status = {0} WHERE id = {1};", (int)Data.PlayerStatus.CASTLE_DESTROYED, defendingArmyCamp.gameID);
+                                using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                {
+                                    update_command.ExecuteNonQuery();
+                                }
+                            }
                         }
                     }
                     else // defenders won

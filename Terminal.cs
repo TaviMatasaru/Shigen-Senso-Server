@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using MySql.Data.MySqlClient;
 
 namespace DevelopersHub.RealtimeNetworking.Server
 {
@@ -8,9 +9,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         #region Update
         public const int updatesPerSecond = 30;
-        public static void Update()
+        public static void Update(MySqlConnection connection)
         {
-            Database.Update();
+            Database.Update(connection);
         }
         #endregion
 
