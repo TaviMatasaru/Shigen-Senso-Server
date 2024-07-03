@@ -185,7 +185,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         private void Disconnect()
         {
-            Console.WriteLine("{0} has been disconnected.", tcp.socket.Client.RemoteEndPoint);
+         //   Console.WriteLine("{0} has been disconnected.", tcp.socket.Client.RemoteEndPoint);
             IPEndPoint ip = tcp.socket.Client.RemoteEndPoint as IPEndPoint;
             Terminal.OnClientDisconnected(id, ip.Address.ToString());
             tcp.Disconnect();

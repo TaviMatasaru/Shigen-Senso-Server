@@ -23,13 +23,13 @@ namespace DevelopersHub.RealtimeNetworking.Server
         {
             DateTime nextLoop = DateTime.Now;
 
-            MySqlConnection connection = Database.GetMySqlConnection();
+            
 
             while (isRunning)
             {
                 while (nextLoop < DateTime.Now)
                 {
-                    Terminal.Update(connection);
+                    Terminal.Update();
                     Threading.UpdateMain();
                     nextLoop = nextLoop.AddMilliseconds(updatePeriod);
                     if (nextLoop > DateTime.Now)

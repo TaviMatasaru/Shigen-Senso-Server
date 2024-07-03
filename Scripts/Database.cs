@@ -4,6 +4,7 @@ using System.Data;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 
 namespace DevelopersHub.RealtimeNetworking.Server
 {
@@ -17,7 +18,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
         private const string _mysqlUsername = "root";
         private const string _mysqlPassword = "";
         private const string _mysqlDatabase = "shigen_senso";
-        
+
+        public static MySqlConnection connection = GetMySqlConnection();
 
         public static MySqlConnection mysqlConnection
         {
@@ -63,22 +65,22 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         private static DateTime collectTime = DateTime.Now;        
 
-        public static async void Update(MySqlConnection connection)
+        public static async void Update()
         {
             double deltaTime = (DateTime.Now - collectTime).TotalSeconds;
 
-            if((DateTime.Now - collectTime).TotalSeconds >= 1.2f)
+            if((DateTime.Now - collectTime).TotalSeconds >= 1.3f)
             {
-                collectTime = DateTime.Now;                
-
+                collectTime = DateTime.Now;
                 
-                    await CollectResourcesAsync(connection);
-                    await UpdateUnitTrainingAsync(connection, deltaTime);
-                    await UpdateUnitsCoordsAsync(connection);
-                    await GameMakerAsync(connection);
-                    await GameManagerAsync(connection);
-                    await BattleManagerAsync(connection);
-                                                  
+                await CollectResourcesAsync(connection);
+                await UpdateUnitTrainingAsync(connection, deltaTime);
+                await UpdateUnitsCoordsAsync(connection);
+                await GameMakerAsync(connection);
+                await GameManagerAsync(connection);
+                await BattleManagerAsync(connection);
+                await UpdatePlayersRanksAsync(connection);
+                                                                                                       
             }
         }
 
@@ -110,9 +112,16 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 bool userFound = false;
                 bool isOnline = false;
 
+                int saltSize = 16; 
+                int iterations = 10000; 
+                int hashByteSize = 20;
+
+                string saltBase64 = "";
+                string hashBase64 = "";
+
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
-                    string select_query = String.Format("SELECT id, username, is_online FROM accounts WHERE username = '{0}' AND password = '{1}';", username, password);                    
+                    string select_query = String.Format("SELECT id, username, password_salt, password, is_online FROM accounts WHERE username = '{0}';", username);                    
                     using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
                     {
                         using (MySqlDataReader reader = select_command.ExecuteReader())
@@ -123,6 +132,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 {
                                     initializationData.accountID = long.Parse(reader["id"].ToString());
                                     initializationData.username = reader["username"].ToString();
+                                    saltBase64 = reader["password_salt"].ToString();
+                                    hashBase64 = reader["password"].ToString();
 
                                     int isTrue = 0;
                                     int.TryParse(reader["is_online"].ToString(), out isTrue);
@@ -145,10 +156,24 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         }
                         else
                         {
-                            string updateIsOnline_query= String.Format("UPDATE accounts SET is_online = 1 WHERE id = {0}", initializationData.accountID);
-                            using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                            byte[] salt = Convert.FromBase64String(saltBase64);
+                            byte[] storedHash = Convert.FromBase64String(hashBase64);
+
+                            byte[] testHash = HashPassword(password, salt, iterations, hashByteSize);
+
+                            bool isPasswordMatch = testHash.SequenceEqual(storedHash);
+
+                            if (isPasswordMatch)
                             {
-                                updatePlayer1_command.ExecuteNonQuery();
+                                string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 1, device_id = '{0}' WHERE id = {1}", device, initializationData.accountID);
+                                using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                                {
+                                    updatePlayer1_command.ExecuteNonQuery();
+                                }
+                            }
+                            else
+                            {
+                                initializationData.accountID = -2;
                             }
                         }
                     }
@@ -263,6 +288,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 bool userFound = false;
                 bool isOnline = false;
 
+                int saltSize = 16; 
+                int iterations = 10000; 
+                int hashByteSize = 20;
+
+
                 using (MySqlConnection connection = GetMySqlConnection())
                 {
                     string select_query = String.Format("SELECT id, username, is_online FROM accounts WHERE username = '{0}';", username, password);
@@ -292,7 +322,14 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     }
                     else
                     {
-                        string insert_query = String.Format("INSERT INTO accounts (device_id, username, password) VALUES ('{0}', '{1}', '{2}');", device, username, password);
+                        byte[] salt = GenerateSalt(saltSize);
+                        byte[] hash = HashPassword(password, salt, iterations, hashByteSize);
+                        
+                        string saltBase64 = Convert.ToBase64String(salt);
+                        string hashBase64 = Convert.ToBase64String(hash);
+
+
+                        string insert_query = String.Format("INSERT INTO accounts (device_id, username, password_salt, password) VALUES ('{0}', '{1}', '{2}', '{3}');", device, username, saltBase64, hashBase64);
                         using (MySqlCommand insert_command = new MySqlCommand(insert_query, connection))
                         {
                             insert_command.ExecuteNonQuery();
@@ -300,9 +337,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
                         }
 
                         string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 1 WHERE id = {0}", initializationData.accountID);
-                        using (MySqlCommand updatePlayer1_command = new MySqlCommand(updateIsOnline_query, connection))
+                        using (MySqlCommand update_command = new MySqlCommand(updateIsOnline_query, connection))
                         {
-                            updatePlayer1_command.ExecuteNonQuery();
+                            update_command.ExecuteNonQuery();
                         }
                         initializationData.username = username;
                     }
@@ -378,6 +415,32 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
+        public async static void ResetAccounts()
+        {
+            await ResetAccountsAsync();
+        }
+
+        private async static Task<bool> ResetAccountsAsync()
+        {
+            Task<bool> task = Task.Run(() =>
+            {                
+                using (MySqlConnection connection = GetMySqlConnection())
+                {                    
+                    string updateIsOnline_query = String.Format("UPDATE accounts SET is_online = 0, in_game = 0, is_searching = 0, game_id = -1, stone = 0, wood = 0, food = 0, stone_production = 0, wood_production = 0, food_production = 0, has_castle = 0, castle_x = 0, castle_y = 0;");
+
+                    using (MySqlCommand updateIsOnline_command = new MySqlCommand(updateIsOnline_query, connection))
+                    {
+                        updateIsOnline_command.ExecuteNonQuery();
+                    }
+                    connection.Close();
+                }
+
+                return true;
+            });
+            return await task;
+        }
+
+
 
 
         public async static void GetPlayerData(int id)
@@ -385,7 +448,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             long accountID = Server.clients[id].account;
             Data.Player data_player = await GetPlayerDataAsync(accountID);
             List<Data.Unit> units = await GetUnitsAsync(accountID);
-            
+
             data_player.units = units;            
 
             Packet packet = new Packet();
@@ -2755,8 +2818,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Task<bool> task = Task.Run(async () =>
             {                
                 
-                List<Data.GameData> activeGames = new List<Data.GameData>();
-                List<Data.GameData> finishedGames = new List<Data.GameData>();
+                List<Data.GameData> activeGames = new List<Data.GameData>();               
 
                 string select_query = String.Format("SELECT id, player1_id, player2_id, game_result, player1_status, player2_status FROM games;", (int)Data.GameResultID.NOT_OVER);
                 using (MySqlCommand select_command = new MySqlCommand(select_query, connection))
@@ -2810,6 +2872,12 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     {
                                         update_command.ExecuteNonQuery();
                                     }
+
+                                    update_query = String.Format("UPDATE accounts SET victories = victories + 1 WHERE id = {0};", game.player2AccountID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
                                 }
                                 else
                                 {
@@ -2826,6 +2894,11 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 if (player2.isOnline == 1)
                                 {
                                     string update_query = String.Format("UPDATE games SET game_result = {0}, player2_status = {1} WHERE id = {2};", (int)Data.GameResultID.P2_LEFT, (int)Data.PlayerStatus.LEFT, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+                                    update_query = String.Format("UPDATE accounts SET victories = victories + 1 WHERE id = {0};", game.player1AccountID);
                                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                                     {
                                         update_command.ExecuteNonQuery();
@@ -2850,11 +2923,22 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                     {
                                         update_command.ExecuteNonQuery();
                                     }
+                                    update_query = String.Format("UPDATE accounts SET victories = victories + 1 WHERE id = {0};", game.player2AccountID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
                                 }
 
                                 if (game.player2Status == Data.PlayerStatus.CASTLE_DESTROYED)
                                 {
                                     string update_query = String.Format("UPDATE games SET game_result = {0} WHERE id = {1};", (int)Data.GameResultID.P1_WON, game.gameID);
+                                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                                    {
+                                        update_command.ExecuteNonQuery();
+                                    }
+
+                                    update_query = String.Format("UPDATE accounts SET victories = victories + 1 WHERE id = {0};", game.player1AccountID);
                                     using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
                                     {
                                         update_command.ExecuteNonQuery();
@@ -2897,6 +2981,20 @@ namespace DevelopersHub.RealtimeNetworking.Server
             return await task;
         }
 
+
+        private async static Task<bool> UpdatePlayersRanksAsync(MySqlConnection connection)
+        {
+            Task<bool> task = Task.Run(() =>
+            {
+                string update_query = String.Format("UPDATE accounts SET rank = (SELECT new_rank FROM( SELECT id, ROW_NUMBER() OVER (ORDER BY victories DESC, id ASC) AS new_rank FROM accounts) ranked WHERE accounts.id = ranked.id);");
+                    using (MySqlCommand update_command = new MySqlCommand(update_query, connection))
+                    {
+                        update_command.ExecuteNonQuery();                        
+                    }                    
+                return true;
+            });
+            return await task;
+        }
 
 
         private async static Task<List<Data.HexTile>> FindPath(long gameID, int startTile_x, int startTile_y, int targetTile_x, int targetTile_y)
@@ -3701,6 +3799,25 @@ namespace DevelopersHub.RealtimeNetworking.Server
                 return response;
             });
             return await task;
+        }
+
+
+        public static byte[] GenerateSalt(int size)
+        {
+            using (var rng = new RNGCryptoServiceProvider())
+            {
+                var buffer = new byte[size];
+                rng.GetBytes(buffer);
+                return buffer;
+            }
+        }
+
+        public static byte[] HashPassword(string password, byte[] salt, int iterations, int hashByteSize)
+        {
+            using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, iterations))
+            {
+                return pbkdf2.GetBytes(hashByteSize);
+            }
         }
 
         #endregion

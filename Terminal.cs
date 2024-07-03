@@ -9,9 +9,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         #region Update
         public const int updatesPerSecond = 30;
-        public static void Update(MySqlConnection connection)
+        public static void Update()
         {
-            Database.Update(connection);
+            Database.Update();
         }
         #endregion
 

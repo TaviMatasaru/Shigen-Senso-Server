@@ -50,6 +50,8 @@ namespace DevelopersHub.RealtimeNetworking.Server
             udpListener = new UdpClient(Port);
             udpListener.BeginReceive(OnConnectedUDP, null);
             Console.WriteLine("Server started on {0} and port {1}.", Tools.GetIP(AddressFamily.InterNetwork), Port);
+
+            Database.ResetAccounts();
         }
 
         private static void OnConnectedTCP(IAsyncResult result)
