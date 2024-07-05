@@ -19,7 +19,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
         private const string _mysqlPassword = "";
         private const string _mysqlDatabase = "shigen_senso";
 
-        public static MySqlConnection connection = GetMySqlConnection();
+       
 
         public static MySqlConnection mysqlConnection
         {
@@ -58,7 +58,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
 
         public static MySqlConnection GetMySqlConnection(){
 
-            MySqlConnection connection = new MySqlConnection("SERVER=" + _mysqlServer + "; DATABASE=" + _mysqlDatabase + "; UID=" + _mysqlUsername + "; PASSWORD=" + _mysqlPassword + "; POOLING=TRUE");
+            MySqlConnection connection = new MySqlConnection("SERVER=" + _mysqlServer + "; DATABASE=" + _mysqlDatabase + "; UID=" + _mysqlUsername + "; PASSWORD=" + _mysqlPassword + "; POOLING=TRUE; Min Pool Size = 1; Max Pool Size = 50;");
             connection.Open();
             return connection;
         }
@@ -72,15 +72,19 @@ namespace DevelopersHub.RealtimeNetworking.Server
             if((DateTime.Now - collectTime).TotalSeconds >= 1.3f)
             {
                 collectTime = DateTime.Now;
-                
-                await CollectResourcesAsync(connection);
-                await UpdateUnitTrainingAsync(connection, deltaTime);
-                await UpdateUnitsCoordsAsync(connection);
-                await GameMakerAsync(connection);
-                await GameManagerAsync(connection);
-                await BattleManagerAsync(connection);
-                await UpdatePlayersRanksAsync(connection);
-                                                                                                       
+
+                using (MySqlConnection connection = GetMySqlConnection())
+                {
+                    await CollectResourcesAsync(connection);
+                    await UpdateUnitTrainingAsync(connection, deltaTime);
+                    await UpdateUnitsCoordsAsync(connection);
+                    await GameMakerAsync(connection);
+                    await GameManagerAsync(connection);
+                    await BattleManagerAsync(connection);
+                    await UpdatePlayersRanksAsync(connection);
+
+                    connection.Close();
+                }                                                                                                                       
             }
         }
 
@@ -1216,12 +1220,15 @@ namespace DevelopersHub.RealtimeNetworking.Server
             Data.Player player = await GetPlayerDataAsync(accountID);
             Data.HexGrid grid = await GetGridAsync(player.gameID);
 
-            Packet packet = new Packet();
-            packet.Write((int)Terminal.RequestsID.SYNC_GRID);
-            string hexGrid = await Data.Serialize<Data.HexGrid>(grid);
-            packet.Write(hexGrid);
+            if(grid.hexTiles.Count == 400)
+            {
+                Packet packet = new Packet();
+                packet.Write((int)Terminal.RequestsID.SYNC_GRID);
+                string hexGrid = await Data.Serialize<Data.HexGrid>(grid);
+                packet.Write(hexGrid);
 
-            Sender.TCP_Send(id, packet);
+                Sender.TCP_Send(id, packet);
+            }            
         }
 
         private async static Task<Data.HexGrid> GetGridAsync(long gameID)
@@ -2348,12 +2355,20 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                 {
                                     await UpdatePlayerResourcesAsync(accountID, player.gems, player.gold, player.stone, player.wood, player.food - unit.requiredFood);
 
-                                    string serializedPath = "";
+                                    string serializedPath = "castle_unit";
 
                                     if(player.castle_x != armyCamp_x && player.castle_y != armyCamp_y)
                                     {
                                         List<Data.HexTile> path = await FindPath(player.gameID, player.castle_x, player.castle_y, armyCamp_x, armyCamp_y);
-                                        serializedPath = await Data.Serialize<List<Data.HexTile>>(path);
+
+                                        if(path.Count < 1)
+                                        {
+                                            serializedPath = "could not find path";
+                                        }
+                                        else
+                                        {
+                                            serializedPath = await Data.Serialize<List<Data.HexTile>>(path);
+                                        }                                        
                                     }
                                    
                                     string insertQuery;
@@ -3465,6 +3480,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                             {
                                                 update_command.ExecuteNonQuery();
                                             }
+                                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
                                         }
                                         else
                                         {
@@ -3473,6 +3489,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                                             {
                                                 update_command.ExecuteNonQuery();
                                             }
+                                            await UpdateHexTileTypeAsync(attacker.gameID, attackerAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);
                                         }
                                     }
                                 }
@@ -3507,7 +3524,7 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         if(isAttackingCastle)
                         {
-                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_CASTLE_UNDER_ATTACK);
+                            await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_CASTLE_UNDER_ATTACK);
                         }
                         else
                         {
@@ -3575,11 +3592,25 @@ namespace DevelopersHub.RealtimeNetworking.Server
                     {
                         if (defender.isPlayer1 == 1)
                         {
-                            await UpdateHexTileTypeAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);
+                            if (isAttackingCastle)
+                            {
+                                await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_CASTLE);
+                            }
+                            else
+                            {
+                                await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER1_ARMY_CAMP);
+                            }
                         }
                         else
                         {
-                            await UpdateHexTileTypeAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                            if (isAttackingCastle)
+                            {
+                                await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_CASTLE);
+                            }
+                            else
+                            {
+                                await UpdateHexTileTypeAsync(defendingArmyCamp.gameID, defendingArmyCamp.accountID, defendingArmyCamp.x, defendingArmyCamp.y, Terminal.HexType.PLAYER2_ARMY_CAMP);
+                            }
                         }
                         await UpdateHexTileIsAttackingAsync(attacker.gameID, attackerAccountID, attackingArmyCamp.x, attackingArmyCamp.y, false);
                         await UpdateHexTileIsDefendingAsync(attacker.gameID, defenderAccountID, defendingArmyCamp.x, defendingArmyCamp.y, false);
