@@ -27,3 +27,6 @@ The Shigen Senso Server provides the necessary infrastructure to support a multi
 
 - **Pathfinding**: Implements pathfinding algorithms to ensure that units can navigate the hexagonal grid map effectively.
 - **Map Generation**: Supports dynamic generation of the game map, ensuring a unique and balanced layout for each game session.
+
+## Game Demo
+- https://youtu.be/0ALPqSQx0po
