@@ -88,6 +88,9 @@ namespace DevelopersHub.RealtimeNetworking.Server
             }
         }
 
+
+
+
         public async static void LoginPlayer(int id, string device, string username, string password)
         {
             Data.InitializationData auth = await LoginPlayerAsync(device, username, password);
